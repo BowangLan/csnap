@@ -1,4 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
+import { Card, CardContent, CardHeader, CardTitle } from '@renderer/components/ui/card'
+import { Versions } from '@renderer/components/Versions'
 
 export const Route = createFileRoute('/about')({
   component: About,
@@ -6,11 +8,19 @@ export const Route = createFileRoute('/about')({
 
 function About() {
   return (
-    <div id="main-content" className="rounded-lg bg-white flex-1">
-      <div className="p-4">
-        <h1 className="text-2xl font-bold mb-2">About</h1>
-        <p>This is an Electron desktop application with TanStack Router.</p>
-      </div>
+    <div className="p-4 max-w-2xl space-y-4">
+      <h1 className="text-2xl font-bold tracking-tight">About</h1>
+      <Card>
+        <CardHeader>
+          <CardTitle>Application Info</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-muted-foreground mb-4">
+            This is an Electron desktop application built with React, TypeScript, TailwindCSS, and TanStack Router.
+          </p>
+          <Versions />
+        </CardContent>
+      </Card>
     </div>
   )
 }
