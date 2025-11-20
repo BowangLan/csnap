@@ -1,8 +1,13 @@
-import { contextBridge } from 'electron'
+import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 
 // Custom APIs for renderer
-const api = {}
+const api = {
+  getTodos: () => ipcRenderer.invoke('get-todos'),
+  addTodo: (text: string) => ipcRenderer.invoke('add-todo', text),
+  toggleTodo: (id: number) => ipcRenderer.invoke('toggle-todo', id),
+  deleteTodo: (id: number) => ipcRenderer.invoke('delete-todo', id)
+}
 
 // Use `contextBridge` APIs to expose Electron APIs to
 // renderer only if context isolation is enabled, otherwise

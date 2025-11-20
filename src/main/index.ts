@@ -2,6 +2,8 @@ import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
+import { initDatabase } from './database/schema'
+import { todoRepository } from './repositories/todo.repository'
 
 const WINDOW_WIDTH = 1200;
 const WINDOW_HEIGHT = 800;
@@ -64,6 +66,26 @@ app.whenReady().then(() => {
 
   // IPC test
   ipcMain.on('ping', () => console.log('pong'))
+
+  // Initialize database
+  initDatabase()
+
+  // Todo IPC handlers
+  ipcMain.handle('get-todos', () => {
+    return todoRepository.findAll()
+  })
+
+  ipcMain.handle('add-todo', (_, text: string) => {
+    return todoRepository.create(text)
+  })
+
+  ipcMain.handle('toggle-todo', (_, id: number) => {
+    todoRepository.toggle(id)
+  })
+
+  ipcMain.handle('delete-todo', (_, id: number) => {
+    todoRepository.delete(id)
+  })
 
   createWindow()
 

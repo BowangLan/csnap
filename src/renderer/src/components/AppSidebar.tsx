@@ -1,4 +1,4 @@
-import { Home, LayoutDashboard, Settings, Users } from "lucide-react"
+import { Home, LayoutDashboard, Settings, Users, ListTodo } from "lucide-react"
 import { Link } from "@tanstack/react-router"
 import {
   Sidebar,
@@ -25,6 +25,11 @@ const items = [
     title: "Dashboard",
     url: "/dashboard",
     icon: LayoutDashboard,
+  },
+  {
+    title: "Todos",
+    url: "/todos",
+    icon: ListTodo,
   },
   {
     title: "Users",
