@@ -23,12 +23,14 @@
     "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^3.0.0",
     "@tanstack/react-router": "^1.136.18",
+    "@tanstack/react-router-devtools": "^1.136.18",
     "electron-updater": "^6.6.2"
   },
   "devDependencies": {
     "@electron-toolkit/eslint-config-prettier": "^2.0.0",
     "@electron-toolkit/eslint-config-ts": "^2.0.0",
     "@electron-toolkit/tsconfig": "^1.0.1",
+    "@tanstack/router-plugin": "^1.136.18",
     "@types/node": "^20.19.25",
     "@types/react": "^18.3.27",
     "@types/react-dom": "^18.3.7",
