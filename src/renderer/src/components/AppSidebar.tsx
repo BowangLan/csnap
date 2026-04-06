@@ -48,7 +48,7 @@ export function AppSidebar() {
     <Sidebar collapsible="icon">
       <SidebarHeader className="h-14 flex items-center justify-center border-b border-sidebar-border/50" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
         <div className="flex items-center gap-2 font-bold text-lg px-4 w-full">
-           <span className="truncate">Desktop App</span>
+          <span className="truncate"></span>
         </div>
       </SidebarHeader>
       <SidebarContent>
