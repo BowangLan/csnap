@@ -19,13 +19,14 @@
     "build:unpack": "npm run build && electron-builder --dir",
     "build:win": "npm run build && electron-builder --win",
     "build:mac": "node scripts/ensure-electron-install.cjs && electron-vite build && electron-builder --mac",
-    "build:linux": "node scripts/ensure-electron-install.cjs && electron-vite build && electron-builder --linux",
-    "rebuild:better-sqlite3": "electron-rebuild -f -w better-sqlite3"
+    "build:linux": "node scripts/ensure-electron-install.cjs && electron-vite build && electron-builder --linux"
   },
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^3.0.0",
     "@hookform/resolvers": "^5.2.2",
+    "@livestore/adapter-node": "0.3.1",
+    "@livestore/livestore": "0.3.1",
     "@radix-ui/react-accordion": "^1.2.12",
     "@radix-ui/react-alert-dialog": "^1.1.15",
     "@radix-ui/react-aspect-ratio": "^1.1.8",
@@ -55,7 +56,6 @@
     "@tailwindcss/vite": "^4.1.17",
     "@tanstack/react-router": "^1.136.18",
     "@tanstack/react-router-devtools": "^1.136.18",
-    "better-sqlite3": "12.4.5",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",

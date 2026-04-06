@@ -1,19 +1,18 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
-
-export interface Todo {
-  id: number
-  text: string
-  completed: boolean
-}
+import type { Todo } from '../shared/todo'
 
 declare global {
   interface Window {
     electron: ElectronAPI
     api: {
-      getTodos: () => Promise<Todo[]>
-      addTodo: (text: string) => Promise<Todo>
-      toggleTodo: (id: number) => Promise<void>
-      deleteTodo: (id: number) => Promise<void>
+      todos: {
+        getSnapshot: () => Todo[]
+        subscribe: (listener: (snapshot: Todo[]) => void) => () => void
+        refresh: () => Promise<Todo[]>
+        add: (text: string) => Promise<void>
+        toggle: (id: string) => Promise<void>
+        remove: (id: string) => Promise<void>
+      }
     }
   }
 }

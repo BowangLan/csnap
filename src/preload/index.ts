@@ -1,12 +1,46 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
+import { TODO_CHANNELS } from '../shared/livestore/channels'
+import type { Todo } from '../shared/todo'
 
-// Custom APIs for renderer
+let todosSnapshot: Todo[] = []
+const todoListeners = new Set<(snapshot: Todo[]) => void>()
+
+const notifyTodoListeners = (nextSnapshot: Todo[]): void => {
+  todosSnapshot = nextSnapshot
+  for (const listener of todoListeners) {
+    listener(todosSnapshot)
+  }
+}
+
+const refreshTodos = async (): Promise<Todo[]> => {
+  const nextSnapshot = await ipcRenderer.invoke(TODO_CHANNELS.snapshot)
+  notifyTodoListeners(nextSnapshot as Todo[])
+  return todosSnapshot
+}
+
+ipcRenderer.on(TODO_CHANNELS.changed, (_event, nextSnapshot: Todo[]) => {
+  notifyTodoListeners(nextSnapshot)
+})
+
+void refreshTodos()
+
 const api = {
-  getTodos: () => ipcRenderer.invoke('get-todos'),
-  addTodo: (text: string) => ipcRenderer.invoke('add-todo', text),
-  toggleTodo: (id: number) => ipcRenderer.invoke('toggle-todo', id),
-  deleteTodo: (id: number) => ipcRenderer.invoke('delete-todo', id)
+  todos: {
+    getSnapshot: () => todosSnapshot,
+    subscribe: (listener: (snapshot: Todo[]) => void) => {
+      todoListeners.add(listener)
+      listener(todosSnapshot)
+
+      return () => {
+        todoListeners.delete(listener)
+      }
+    },
+    refresh: refreshTodos,
+    add: (text: string) => ipcRenderer.invoke(TODO_CHANNELS.add, text),
+    toggle: (id: string) => ipcRenderer.invoke(TODO_CHANNELS.toggle, id),
+    remove: (id: string) => ipcRenderer.invoke(TODO_CHANNELS.remove, id),
+  },
 }
 
 // Use `contextBridge` APIs to expose Electron APIs to

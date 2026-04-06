@@ -2,12 +2,13 @@ import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
-import { initDatabase } from './database/schema'
-import { todoRepository } from './repositories/todo.repository'
+import { TodoStoreService } from './livestore/todo-store'
 
-const WINDOW_WIDTH = 1200;
-const WINDOW_HEIGHT = 800;
-const NAVBAR_HEIGHT = 56;
+const WINDOW_WIDTH = 1200
+const WINDOW_HEIGHT = 800
+const NAVBAR_HEIGHT = 56
+
+const todoStore = new TodoStoreService()
 
 function createWindow(): void {
   // Create the browser window.
@@ -16,20 +17,20 @@ function createWindow(): void {
     height: WINDOW_HEIGHT,
     frame: false,
     transparent: true,
-    titleBarStyle: "hidden",
+    titleBarStyle: 'hidden',
     trafficLightPosition: {
       x: 16,
       y: NAVBAR_HEIGHT / 2 - 8,
     },
-    vibrancy: "fullscreen-ui",
-    backgroundMaterial: "acrylic",
+    vibrancy: 'fullscreen-ui',
+    backgroundMaterial: 'acrylic',
     show: false,
     autoHideMenuBar: true,
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false
-    }
+    },
   })
 
   mainWindow.on('ready-to-show', () => {
@@ -53,7 +54,7 @@ function createWindow(): void {
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   // Set app user model id for windows
   electronApp.setAppUserModelId('com.electron')
 
@@ -64,28 +65,10 @@ app.whenReady().then(() => {
     optimizer.watchWindowShortcuts(window)
   })
 
-  // IPC test
+  ipcMain.removeAllListeners('ping')
   ipcMain.on('ping', () => console.log('pong'))
 
-  // Initialize database
-  initDatabase()
-
-  // Todo IPC handlers
-  ipcMain.handle('get-todos', () => {
-    return todoRepository.findAll()
-  })
-
-  ipcMain.handle('add-todo', (_, text: string) => {
-    return todoRepository.create(text)
-  })
-
-  ipcMain.handle('toggle-todo', (_, id: number) => {
-    todoRepository.toggle(id)
-  })
-
-  ipcMain.handle('delete-todo', (_, id: number) => {
-    todoRepository.delete(id)
-  })
+  await todoStore.init()
 
   createWindow()
 
@@ -103,6 +86,10 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit()
   }
+})
+
+app.on('before-quit', () => {
+  void todoStore.shutdown()
 })
 
 // In this file you can include the rest of your app"s specific main process

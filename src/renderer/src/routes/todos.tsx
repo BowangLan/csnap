@@ -5,47 +5,41 @@ import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
 import { Checkbox } from '@renderer/components/ui/checkbox'
 import { Card, CardContent, CardHeader } from '@renderer/components/ui/card'
+import type { Todo } from '../../../shared/todo'
 
 export const Route = createFileRoute('/todos')({
   component: Todos,
 })
 
-interface Todo {
-  id: number
-  text: string
-  completed: boolean
-}
-
 function Todos() {
-  const [todos, setTodos] = useState<Todo[]>([])
   const [inputValue, setInputValue] = useState('')
+  const [isLoading, setIsLoading] = useState(true)
+  const [todos, setTodos] = useState<Todo[]>([])
 
   useEffect(() => {
-    loadTodos()
-  }, [])
+    const unsubscribe = window.api.todos.subscribe((snapshot) => {
+      setTodos(snapshot)
+    })
 
-  const loadTodos = async () => {
-    const loadedTodos = await window.api.getTodos()
-    setTodos(loadedTodos)
-  }
+    void window.api.todos.refresh().finally(() => setIsLoading(false))
+
+    return unsubscribe
+  }, [])
 
   const handleAddTodo = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!inputValue.trim()) return
 
-    await window.api.addTodo(inputValue)
+    await window.api.todos.add(inputValue)
     setInputValue('')
-    loadTodos()
   }
 
-  const handleToggleTodo = async (id: number) => {
-    await window.api.toggleTodo(id)
-    loadTodos()
+  const handleToggleTodo = async (id: string) => {
+    await window.api.todos.toggle(id)
   }
 
-  const handleDeleteTodo = async (id: number) => {
-    await window.api.deleteTodo(id)
-    loadTodos()
+  const handleDeleteTodo = async (id: string) => {
+    await window.api.todos.remove(id)
   }
 
   return (
@@ -67,7 +61,11 @@ function Todos() {
           </form>
         </CardHeader>
         <CardContent className="flex-1 overflow-auto p-0">
-          {todos.length === 0 ? (
+          {isLoading ? (
+            <div className="flex h-full items-center justify-center text-muted-foreground">
+              Loading todos...
+            </div>
+          ) : todos.length === 0 ? (
             <div className="flex h-full items-center justify-center text-muted-foreground">
               No tasks yet. Add one above!
             </div>
@@ -107,4 +105,3 @@ function Todos() {
     </div>
   )
 }
-
