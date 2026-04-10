@@ -4,20 +4,21 @@ import { formatDistanceToNow } from 'date-fns'
 import {
   ArrowUpRight,
   Check,
-  CheckCircle2,
   Copy,
+  X,
   FileCode2,
   GitBranch,
   GitCommitHorizontal,
   GitPullRequest,
   Loader2,
   MessageSquare,
+  MinusCircle,
   RefreshCw,
-  XCircle
 } from 'lucide-react'
 import { useGithubSnapshot } from '@renderer/hooks/use-github-snapshot'
 import { Badge } from '@renderer/components/ui/badge'
 import { Button } from '@renderer/components/ui/button'
+import { HoverCard, HoverCardContent, HoverCardTrigger } from '@renderer/components/ui/hover-card'
 import { Skeleton } from '@renderer/components/ui/skeleton'
 import { cn } from '@renderer/lib/utils'
 import type { GithubPullRequestCiStatus } from '../../../shared/github'
@@ -29,6 +30,18 @@ export const Route = createFileRoute('/prs')({
 function PullRequestsPage() {
   const snapshot = useGithubSnapshot()
   const isInitialLoading = snapshot.sync.isRefreshing && snapshot.sync.lastRefreshedAt === null
+
+  const hasRunningCi = snapshot.pullRequests.some((pr) =>
+    pr.ciStatuses.some((ci) => normalizeCiState(ci) === 'pending')
+  )
+
+  React.useEffect(() => {
+    if (!hasRunningCi) return
+    const interval = setInterval(() => {
+      void window.api.github.refresh()
+    }, 15_000)
+    return () => clearInterval(interval)
+  }, [hasRunningCi])
 
   return (
     <div className="flex min-w-0 flex-col gap-4">
@@ -125,11 +138,7 @@ function PullRequestsPage() {
                     </div>
 
                     {pullRequest.ciStatuses.length > 0 ? (
-                      <div className="flex min-w-0 flex-wrap gap-1.5">
-                        {pullRequest.ciStatuses.map((ciStatus) => (
-                          <CiChip key={ciStatus.id} ciStatus={ciStatus} />
-                        ))}
-                      </div>
+                      <CiStatusSummary ciStatuses={pullRequest.ciStatuses} />
                     ) : null}
 
                     <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
@@ -204,46 +213,51 @@ function PullRequestRowSkeleton() {
   )
 }
 
-function CiChip({ ciStatus }: { ciStatus: GithubPullRequestCiStatus }) {
-  const state = normalizeCiState(ciStatus)
-  const label = ciStatus.workflowName
-    ? `${ciStatus.workflowName} / ${ciStatus.name}`
-    : ciStatus.name
+function CiStateIcon({ state }: { state: ReturnType<typeof normalizeCiState> }) {
+  if (state === 'passing') return <Check className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
+  if (state === 'pending') return <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-amber-500" />
+  if (state === 'skipped') return <MinusCircle className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+  return <X className="h-3.5 w-3.5 shrink-0 text-rose-500" />
+}
 
-  const icon =
-    state === 'passing' ? (
-      <CheckCircle2 className="h-3 w-3 shrink-0 text-emerald-500" />
-    ) : state === 'pending' ? (
-      <Loader2 className="h-3 w-3 shrink-0 animate-spin text-amber-500" />
-    ) : (
-      <XCircle className="h-3 w-3 shrink-0 text-rose-500" />
-    )
+function CiStatusSummary({ ciStatuses }: { ciStatuses: GithubPullRequestCiStatus[] }) {
+  const sorted = ciStatuses
+    .slice()
+    .sort((a, b) => ciStatusPriority(normalizeCiState(a)) - ciStatusPriority(normalizeCiState(b)))
 
-  const chip = (
-    <span
-      className={cn(
-        'inline-flex max-w-[14rem] items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs',
-        state === 'passing' &&
-          'border-emerald-500/20 bg-emerald-500/8 text-emerald-700 dark:text-emerald-400',
-        state === 'pending' &&
-          'border-amber-500/20 bg-amber-500/8 text-amber-700 dark:text-amber-400',
-        state === 'failing' && 'border-rose-500/20 bg-rose-500/8 text-rose-700 dark:text-rose-400'
-      )}
-    >
-      {icon}
-      <span className="truncate">{label}</span>
-    </span>
+  return (
+    <HoverCard openDelay={200} closeDelay={100}>
+      <HoverCardTrigger asChild>
+        <div className="flex items-center gap-0.5 cursor-default">
+          {sorted.map((ci) => (
+            <CiStateIcon key={ci.id} state={normalizeCiState(ci)} />
+          ))}
+        </div>
+      </HoverCardTrigger>
+      <HoverCardContent align="start" sideOffset={6} className="w-72 p-0 overflow-hidden">
+        <div className="max-h-56 overflow-y-auto">
+          {sorted.map((ci) => {
+            const state = normalizeCiState(ci)
+            const label = ci.workflowName ? `${ci.workflowName} / ${ci.name}` : ci.name
+            const row = (
+              <div className="flex items-center gap-2.5 px-3 py-2 text-xs text-foreground transition-colors hover:bg-muted">
+                <CiStateIcon state={state} />
+                <span className="truncate">{label}</span>
+              </div>
+            )
+            if (ci.detailsUrl) {
+              return (
+                <a key={ci.id} href={ci.detailsUrl} target="_blank" rel="noreferrer" className="block outline-none">
+                  {row}
+                </a>
+              )
+            }
+            return <div key={ci.id}>{row}</div>
+          })}
+        </div>
+      </HoverCardContent>
+    </HoverCard>
   )
-
-  if (ciStatus.detailsUrl) {
-    return (
-      <a href={ciStatus.detailsUrl} target="_blank" rel="noreferrer" className="outline-none">
-        {chip}
-      </a>
-    )
-  }
-
-  return chip
 }
 
 function CopyBranchButton({ branchName }: { branchName: string }) {
@@ -310,16 +324,30 @@ function getReviewLabel(reviewDecision: string | null): string {
 }
 
 
-function normalizeCiState(ciStatus: GithubPullRequestCiStatus): 'passing' | 'pending' | 'failing' {
+function normalizeCiState(
+  ciStatus: GithubPullRequestCiStatus
+): 'pending' | 'failing' | 'skipped' | 'passing' {
   const value = (ciStatus.conclusion ?? ciStatus.status).toUpperCase()
-  if (['SUCCESS', 'SUCCESSFUL', 'NEUTRAL', 'SKIPPED'].includes(value)) {
-    return 'passing'
-  }
-
   if (['QUEUED', 'IN_PROGRESS', 'PENDING', 'EXPECTED', 'WAITING', 'REQUESTED'].includes(value)) {
     return 'pending'
   }
-
+  if (['SUCCESS', 'SUCCESSFUL', 'NEUTRAL'].includes(value)) {
+    return 'passing'
+  }
+  if (value === 'SKIPPED') {
+    return 'skipped'
+  }
   return 'failing'
+}
+
+const CI_STATUS_PRIORITY: Record<ReturnType<typeof normalizeCiState>, number> = {
+  pending: 0,
+  failing: 1,
+  skipped: 2,
+  passing: 3,
+}
+
+function ciStatusPriority(state: ReturnType<typeof normalizeCiState>): number {
+  return CI_STATUS_PRIORITY[state]
 }
 
