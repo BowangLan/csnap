@@ -84,6 +84,7 @@ const PULL_REQUEST_QUERY = `
               }
             }
           }
+          headRefName
           author {
             login
           }
@@ -132,6 +133,7 @@ interface GhPullRequestNode {
   commits: {
     totalCount: number
   }
+  headRefName: string
   latestCommit: {
     nodes: Array<{
       commit: {
@@ -412,6 +414,8 @@ export class GithubSyncService {
 
         repositoriesById.set(repository.id, repository)
 
+        console.log('[gh-notify] PR node keys:', Object.keys(node))
+        console.log('[gh-notify] headRefName:', node.headRefName)
         const ciRollup = node.latestCommit.nodes[0]?.commit.statusCheckRollup ?? null
 
         return {
@@ -425,6 +429,7 @@ export class GithubSyncService {
           isDraft: node.isDraft,
           reviewDecision: node.reviewDecision,
           mergeable: node.mergeable,
+          headRefName: node.headRefName ?? '',
           authorLogin: node.author?.login ?? null,
           createdAt: toTimestamp(node.createdAt) ?? Date.now(),
           updatedAt: toTimestamp(node.updatedAt) ?? Date.now(),

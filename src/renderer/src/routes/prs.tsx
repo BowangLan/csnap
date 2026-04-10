@@ -1,20 +1,26 @@
+import React from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { formatDistanceToNow } from 'date-fns'
 import {
   ArrowUpRight,
+  Check,
+  CheckCircle2,
+  Copy,
   FileCode2,
+  GitBranch,
   GitCommitHorizontal,
   GitPullRequest,
+  Loader2,
   MessageSquare,
-  RefreshCw
+  RefreshCw,
+  XCircle
 } from 'lucide-react'
 import { useGithubSnapshot } from '@renderer/hooks/use-github-snapshot'
 import { Badge } from '@renderer/components/ui/badge'
 import { Button } from '@renderer/components/ui/button'
-import { HoverCard, HoverCardContent, HoverCardTrigger } from '@renderer/components/ui/hover-card'
 import { Skeleton } from '@renderer/components/ui/skeleton'
 import { cn } from '@renderer/lib/utils'
-import type { GithubPullRequest, GithubPullRequestCiStatus } from '../../../shared/github'
+import type { GithubPullRequestCiStatus } from '../../../shared/github'
 
 export const Route = createFileRoute('/prs')({
   component: PullRequestsPage
@@ -50,7 +56,7 @@ function PullRequestsPage() {
             No open pull requests matched your current GitHub account.
           </div>
         ) : (
-          <div className="divide-y">
+          <div className="flex flex-col">
             {snapshot.pullRequests.map((pullRequest) => (
               <div
                 key={pullRequest.id}
@@ -116,58 +122,15 @@ function PullRequestsPage() {
                       >
                         {getReviewLabel(pullRequest.reviewDecision)}
                       </Badge>
-                      <HoverCard openDelay={150} closeDelay={100}>
-                        <HoverCardTrigger asChild>
-                          <button className="min-w-0 max-w-full text-left outline-none">
-                            <Badge
-                              variant={ciSummaryVariant(pullRequest)}
-                              className={cn(
-                                'max-w-full cursor-pointer truncate',
-                                ciSummaryTone(pullRequest)
-                              )}
-                            >
-                              {getCiSummaryLabel(pullRequest)}
-                            </Badge>
-                          </button>
-                        </HoverCardTrigger>
-                        <HoverCardContent align="start" className="w-80 space-y-3">
-                          <div className="space-y-1">
-                            <p className="text-sm font-medium">Check details</p>
-                            <p className="text-xs text-muted-foreground">
-                              {pullRequest.ciStatuses.length === 0
-                                ? 'This pull request has not reported any checks yet.'
-                                : 'Current CI runs and status contexts for this pull request.'}
-                            </p>
-                          </div>
-                          {pullRequest.ciStatuses.length === 0 ? null : (
-                            <div className="space-y-2">
-                              {pullRequest.ciStatuses.map((ciStatus) => (
-                                <div
-                                  key={ciStatus.id}
-                                  className="flex items-start justify-between gap-3 rounded-lg border bg-muted/20 px-3 py-2"
-                                >
-                                  <div className="min-w-0 space-y-1">
-                                    <p className="truncate text-sm font-medium">{ciStatus.name}</p>
-                                    <p className="truncate text-xs text-muted-foreground">
-                                      {ciStatus.workflowName ?? ciStatus.kind}
-                                    </p>
-                                  </div>
-                                  <StatusPill state={normalizeCiState(ciStatus)}>
-                                    {formatCiState(ciStatus)}
-                                  </StatusPill>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </HoverCardContent>
-                      </HoverCard>
-                      <span
-                        className="max-w-full truncate text-xs text-muted-foreground"
-                        title={pullRequest.ciStatuses.map(formatCiStatusLabel).join(', ')}
-                      >
-                        {getCiCaption(pullRequest)}
-                      </span>
                     </div>
+
+                    {pullRequest.ciStatuses.length > 0 ? (
+                      <div className="flex min-w-0 flex-wrap gap-1.5">
+                        {pullRequest.ciStatuses.map((ciStatus) => (
+                          <CiChip key={ciStatus.id} ciStatus={ciStatus} />
+                        ))}
+                      </div>
+                    ) : null}
 
                     <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
                       <div className="inline-flex items-center gap-1.5">
@@ -182,10 +145,13 @@ function PullRequestsPage() {
                         <MessageSquare className="h-3.5 w-3.5" />
                         <span>{pullRequest.commentsCount} comments</span>
                       </div>
-                      <div className="inline-flex items-center gap-1.5 font-medium text-foreground">
-                        <span>{formatDelta(pullRequest.additions, pullRequest.deletions)}</span>
+                      <div className="inline-flex items-center gap-1 font-medium">
+                        <span className="text-emerald-600 dark:text-emerald-400">+{pullRequest.additions}</span>
+<span className="text-rose-600 dark:text-rose-400">-{pullRequest.deletions}</span>
                       </div>
-                      <span className="truncate">ID {pullRequest.id}</span>
+                      {pullRequest.headRefName ? (
+                        <CopyBranchButton branchName={pullRequest.headRefName} />
+                      ) : null}
                     </div>
                   </div>
                 </div>
@@ -238,26 +204,75 @@ function PullRequestRowSkeleton() {
   )
 }
 
-function StatusPill({
-  state,
-  children
-}: {
-  state: 'passing' | 'pending' | 'failing'
-  children: string
-}) {
-  return (
+function CiChip({ ciStatus }: { ciStatus: GithubPullRequestCiStatus }) {
+  const state = normalizeCiState(ciStatus)
+  const label = ciStatus.workflowName
+    ? `${ciStatus.workflowName} / ${ciStatus.name}`
+    : ciStatus.name
+
+  const icon =
+    state === 'passing' ? (
+      <CheckCircle2 className="h-3 w-3 shrink-0 text-emerald-500" />
+    ) : state === 'pending' ? (
+      <Loader2 className="h-3 w-3 shrink-0 animate-spin text-amber-500" />
+    ) : (
+      <XCircle className="h-3 w-3 shrink-0 text-rose-500" />
+    )
+
+  const chip = (
     <span
       className={cn(
-        'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
-        state === 'passing' && 'bg-emerald-500/12 text-emerald-700 dark:text-emerald-300',
-        state === 'pending' && 'bg-amber-500/12 text-amber-700 dark:text-amber-300',
-        state === 'failing' && 'bg-rose-500/12 text-rose-700 dark:text-rose-300'
+        'inline-flex max-w-[14rem] items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs',
+        state === 'passing' &&
+          'border-emerald-500/20 bg-emerald-500/8 text-emerald-700 dark:text-emerald-400',
+        state === 'pending' &&
+          'border-amber-500/20 bg-amber-500/8 text-amber-700 dark:text-amber-400',
+        state === 'failing' && 'border-rose-500/20 bg-rose-500/8 text-rose-700 dark:text-rose-400'
       )}
     >
-      {children}
+      {icon}
+      <span className="truncate">{label}</span>
     </span>
   )
+
+  if (ciStatus.detailsUrl) {
+    return (
+      <a href={ciStatus.detailsUrl} target="_blank" rel="noreferrer" className="outline-none">
+        {chip}
+      </a>
+    )
+  }
+
+  return chip
 }
+
+function CopyBranchButton({ branchName }: { branchName: string }) {
+  const [copied, setCopied] = React.useState(false)
+
+  function handleCopy() {
+    void navigator.clipboard.writeText(branchName).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    })
+  }
+
+  return (
+    <button
+      onClick={handleCopy}
+      className="inline-flex max-w-[16rem] items-center gap-1 rounded px-1.5 py-0.5 font-mono text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+      title={`Copy branch name: ${branchName}`}
+    >
+      <GitBranch className="h-3 w-3 shrink-0" />
+      <span className="truncate">{branchName}</span>
+      {copied ? (
+        <Check className="h-3 w-3 shrink-0 text-emerald-500" />
+      ) : (
+        <Copy className="h-3 w-3 shrink-0 opacity-40 transition-opacity hover:opacity-70" />
+      )}
+    </button>
+  )
+}
+
 
 function badgeVariant(reviewDecision: string | null): 'default' | 'secondary' | 'outline' {
   switch (reviewDecision) {
@@ -270,18 +285,6 @@ function badgeVariant(reviewDecision: string | null): 'default' | 'secondary' | 
   }
 }
 
-function ciSummaryVariant(pullRequest: GithubPullRequest): 'default' | 'secondary' | 'outline' {
-  const summary = summarizeCiStatuses(pullRequest.ciStatuses)
-  if (summary.failing > 0) {
-    return 'secondary'
-  }
-
-  if (summary.pending > 0) {
-    return 'outline'
-  }
-
-  return 'default'
-}
 
 function reviewDecisionTone(reviewDecision: string | null): string {
   switch (reviewDecision) {
@@ -294,47 +297,6 @@ function reviewDecisionTone(reviewDecision: string | null): string {
   }
 }
 
-function ciSummaryTone(pullRequest: GithubPullRequest): string {
-  const summary = summarizeCiStatuses(pullRequest.ciStatuses)
-  if (pullRequest.ciStatuses.length === 0) {
-    return 'bg-muted text-muted-foreground'
-  }
-
-  if (summary.failing > 0) {
-    return 'bg-rose-500/12 text-rose-700 hover:bg-rose-500/20 dark:text-rose-300'
-  }
-
-  if (summary.pending > 0) {
-    return 'bg-amber-500/10 text-amber-700 hover:bg-amber-500/20 dark:text-amber-300'
-  }
-
-  return 'bg-emerald-500/12 text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-300'
-}
-
-function getCiSummaryLabel(pullRequest: GithubPullRequest): string {
-  const summary = summarizeCiStatuses(pullRequest.ciStatuses)
-  if (pullRequest.ciStatuses.length === 0) {
-    return 'No checks'
-  }
-
-  if (summary.failing > 0) {
-    return `${summary.failing} failing`
-  }
-
-  if (summary.pending > 0) {
-    return `${summary.pending} pending`
-  }
-
-  return `${summary.passing} passing`
-}
-
-function getCiCaption(pullRequest: GithubPullRequest): string {
-  if (pullRequest.ciStatuses.length === 0) {
-    return 'No reported checks'
-  }
-
-  return pullRequest.ciStatuses.slice(0, 2).map(formatCiStatusLabel).join(' • ')
-}
 
 function getReviewLabel(reviewDecision: string | null): string {
   switch (reviewDecision) {
@@ -347,27 +309,6 @@ function getReviewLabel(reviewDecision: string | null): string {
   }
 }
 
-function summarizeCiStatuses(ciStatuses: GithubPullRequestCiStatus[]): {
-  passing: number
-  pending: number
-  failing: number
-} {
-  return ciStatuses.reduce(
-    (summary, ciStatus) => {
-      const normalized = normalizeCiState(ciStatus)
-      if (normalized === 'passing') {
-        summary.passing += 1
-      } else if (normalized === 'pending') {
-        summary.pending += 1
-      } else {
-        summary.failing += 1
-      }
-
-      return summary
-    },
-    { passing: 0, pending: 0, failing: 0 }
-  )
-}
 
 function normalizeCiState(ciStatus: GithubPullRequestCiStatus): 'passing' | 'pending' | 'failing' {
   const value = (ciStatus.conclusion ?? ciStatus.status).toUpperCase()
@@ -382,16 +323,3 @@ function normalizeCiState(ciStatus: GithubPullRequestCiStatus): 'passing' | 'pen
   return 'failing'
 }
 
-function formatCiStatusLabel(ciStatus: GithubPullRequestCiStatus): string {
-  const state = ciStatus.conclusion ?? ciStatus.status
-  return `${ciStatus.name}: ${state.toLowerCase()}`
-}
-
-function formatCiState(ciStatus: GithubPullRequestCiStatus): string {
-  const state = ciStatus.conclusion ?? ciStatus.status
-  return state.toLowerCase().replaceAll('_', ' ')
-}
-
-function formatDelta(additions: number, deletions: number): string {
-  return `+${additions} / -${deletions}`
-}

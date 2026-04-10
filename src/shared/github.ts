@@ -29,6 +29,7 @@ export interface GithubPullRequest {
   changedFiles: number
   commentsCount: number
   commitsCount: number
+  headRefName: string
   ciRollupState: string | null
   ciStatuses: GithubPullRequestCiStatus[]
 }
