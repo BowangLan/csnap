@@ -1,4 +1,4 @@
-import { Home, LayoutDashboard, Settings, Users, ListTodo } from "lucide-react"
+import { FolderGit2, GitPullRequest, Home, Settings } from "lucide-react"
 import { Link } from "@tanstack/react-router"
 import {
   Sidebar,
@@ -22,19 +22,14 @@ const items = [
     icon: Home,
   },
   {
-    title: "Dashboard",
-    url: "/dashboard",
-    icon: LayoutDashboard,
+    title: "Repos",
+    url: "/repos",
+    icon: FolderGit2,
   },
   {
-    title: "Todos",
-    url: "/todos",
-    icon: ListTodo,
-  },
-  {
-    title: "Users",
-    url: "/users",
-    icon: Users,
+    title: "PRs",
+    url: "/prs",
+    icon: GitPullRequest,
   },
   {
     title: "Settings",

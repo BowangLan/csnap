@@ -1,4 +1,8 @@
 import { createFileRoute } from '@tanstack/react-router'
+import { useEffect, useState } from 'react'
+import { formatDistanceToNow } from 'date-fns'
+import { toast } from 'sonner'
+import { useGithubSnapshot } from '@renderer/hooks/use-github-snapshot'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@renderer/components/ui/card'
 import { Input } from '@renderer/components/ui/input'
 import { Label } from '@renderer/components/ui/label'
@@ -10,57 +14,124 @@ export const Route = createFileRoute('/settings')({
 })
 
 function Settings() {
+  const snapshot = useGithubSnapshot()
+  const [refreshIntervalSeconds, setRefreshIntervalSeconds] = useState(
+    String(snapshot.settings.refreshIntervalSeconds),
+  )
+  const [soundOnPrUpdates, setSoundOnPrUpdates] = useState(snapshot.settings.soundOnPrUpdates)
+  const [isSaving, setIsSaving] = useState(false)
+
+  useEffect(() => {
+    setRefreshIntervalSeconds(String(snapshot.settings.refreshIntervalSeconds))
+    setSoundOnPrUpdates(snapshot.settings.soundOnPrUpdates)
+  }, [snapshot.settings.refreshIntervalSeconds, snapshot.settings.soundOnPrUpdates])
+
+  const handleSave = async () => {
+    setIsSaving(true)
+    try {
+      await window.api.github.updateSettings({
+        refreshIntervalSeconds: Number(refreshIntervalSeconds),
+        soundOnPrUpdates,
+      })
+      toast.success('GitHub sync settings updated.')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to update settings.')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
   return (
     <div className="p-4 space-y-4 max-w-2xl">
       <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
       
       <Card>
         <CardHeader>
-          <CardTitle>Profile Settings</CardTitle>
-          <CardDescription>Manage your public profile information.</CardDescription>
+          <CardTitle>GitHub Sync</CardTitle>
+          <CardDescription>Configure background refresh and pull request notifications.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="username">Username</Label>
-            <Input id="username" placeholder="jdoe" defaultValue="jdoe" />
+            <Label htmlFor="refresh-interval">Refresh interval (seconds)</Label>
+            <Input
+              id="refresh-interval"
+              type="number"
+              min={15}
+              max={3600}
+              value={refreshIntervalSeconds}
+              onChange={(event) => setRefreshIntervalSeconds(event.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              The sync loop refreshes repositories and pull requests every 60 seconds by default.
+            </p>
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
-            <Input id="email" type="email" placeholder="john@example.com" defaultValue="john@example.com" />
+          <div className="flex items-center justify-between space-x-2">
+            <Label htmlFor="pr-sound" className="flex flex-col space-y-1">
+              <span>Sound on pull request updates</span>
+              <span className="font-normal leading-snug text-muted-foreground">
+                Play a system sound whenever a tracked pull request changes on refresh.
+              </span>
+            </Label>
+            <Switch
+              id="pr-sound"
+              checked={soundOnPrUpdates}
+              onCheckedChange={(checked) => setSoundOnPrUpdates(Boolean(checked))}
+            />
+          </div>
+          <div className="flex items-center justify-between space-x-2">
+            <Label className="flex flex-col space-y-1">
+              <span>Authenticated account</span>
+              <span className="font-normal leading-snug text-muted-foreground">
+                {snapshot.auth.isAuthenticated
+                  ? snapshot.auth.activeLogin
+                  : 'GitHub CLI is not authenticated'}
+              </span>
+            </Label>
+            <span className="text-sm text-muted-foreground">
+              {snapshot.auth.isAuthenticated ? 'Connected' : 'Disconnected'}
+            </span>
           </div>
         </CardContent>
         <CardFooter>
-          <Button>Save Changes</Button>
+          <Button onClick={handleSave} disabled={isSaving}>
+            {isSaving ? 'Saving...' : 'Save Settings'}
+          </Button>
         </CardFooter>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle>Notifications</CardTitle>
-          <CardDescription>Configure how you receive notifications.</CardDescription>
+          <CardTitle>Sync Status</CardTitle>
+          <CardDescription>Current state of the background GitHub refresh loop.</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex items-center justify-between space-x-2">
-            <Label htmlFor="email-notifs" className="flex flex-col space-y-1">
-              <span>Email Notifications</span>
-              <span className="font-normal leading-snug text-muted-foreground">
-                Receive emails about new activity.
-              </span>
-            </Label>
-            <Switch id="email-notifs" defaultChecked />
+        <CardContent className="space-y-3 text-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-muted-foreground">Last successful refresh</span>
+            <span>{formatStatusTimestamp(snapshot.sync.lastRefreshedAt)}</span>
           </div>
-          <div className="flex items-center justify-between space-x-2">
-            <Label htmlFor="push-notifs" className="flex flex-col space-y-1">
-              <span>Push Notifications</span>
-              <span className="font-normal leading-snug text-muted-foreground">
-                Receive push notifications on your device.
-              </span>
-            </Label>
-            <Switch id="push-notifs" />
+          <div className="flex items-center justify-between">
+            <span className="text-muted-foreground">Last detected PR update</span>
+            <span>{formatStatusTimestamp(snapshot.sync.lastUpdateDetectedAt)}</span>
           </div>
+          <div className="flex items-center justify-between">
+            <span className="text-muted-foreground">Background refresh</span>
+            <span>{snapshot.sync.isRefreshing ? 'Running' : 'Idle'}</span>
+          </div>
+          {snapshot.sync.lastError ? (
+            <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-destructive">
+              {snapshot.sync.lastError}
+            </div>
+          ) : null}
         </CardContent>
       </Card>
     </div>
   )
 }
 
+function formatStatusTimestamp(value: number | null): string {
+  if (!value) {
+    return 'Never'
+  }
+
+  return formatDistanceToNow(value, { addSuffix: true })
+}

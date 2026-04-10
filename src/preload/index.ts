@@ -1,15 +1,48 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import { TODO_CHANNELS } from '../shared/livestore/channels'
+import { type GithubSettings, type GithubSnapshot } from '../shared/github'
 import type { Todo } from '../shared/todo'
 
 let todosSnapshot: Todo[] = []
 const todoListeners = new Set<(snapshot: Todo[]) => void>()
+const GITHUB_CHANNELS = {
+  snapshot: 'github:snapshot',
+  changed: 'github:changed',
+  refresh: 'github:refresh',
+  updateSettings: 'github:update-settings',
+} as const
+let githubSnapshot: GithubSnapshot = {
+  auth: {
+    isAuthenticated: false,
+    activeLogin: null,
+  },
+  repositories: [],
+  pullRequests: [],
+  settings: {
+    refreshIntervalSeconds: 60,
+    soundOnPrUpdates: true,
+  },
+  sync: {
+    isRefreshing: false,
+    lastRefreshedAt: null,
+    lastUpdateDetectedAt: null,
+    lastError: null,
+  },
+}
+const githubListeners = new Set<(snapshot: GithubSnapshot) => void>()
 
 const notifyTodoListeners = (nextSnapshot: Todo[]): void => {
   todosSnapshot = nextSnapshot
   for (const listener of todoListeners) {
     listener(todosSnapshot)
+  }
+}
+
+const notifyGithubListeners = (nextSnapshot: GithubSnapshot): void => {
+  githubSnapshot = nextSnapshot
+  for (const listener of githubListeners) {
+    listener(githubSnapshot)
   }
 }
 
@@ -23,7 +56,14 @@ ipcRenderer.on(TODO_CHANNELS.changed, (_event, nextSnapshot: Todo[]) => {
   notifyTodoListeners(nextSnapshot)
 })
 
+ipcRenderer.on(GITHUB_CHANNELS.changed, (_event, nextSnapshot: GithubSnapshot) => {
+  notifyGithubListeners(nextSnapshot)
+})
+
 void refreshTodos()
+void ipcRenderer.invoke(GITHUB_CHANNELS.snapshot).then((nextSnapshot) => {
+  notifyGithubListeners(nextSnapshot as GithubSnapshot)
+})
 
 const api = {
   todos: {
@@ -40,6 +80,30 @@ const api = {
     add: (text: string) => ipcRenderer.invoke(TODO_CHANNELS.add, text),
     toggle: (id: string) => ipcRenderer.invoke(TODO_CHANNELS.toggle, id),
     remove: (id: string) => ipcRenderer.invoke(TODO_CHANNELS.remove, id),
+  },
+  github: {
+    getSnapshot: () => githubSnapshot,
+    subscribe: (listener: (snapshot: GithubSnapshot) => void) => {
+      githubListeners.add(listener)
+      listener(githubSnapshot)
+
+      return () => {
+        githubListeners.delete(listener)
+      }
+    },
+    refresh: async () => {
+      const nextSnapshot = (await ipcRenderer.invoke(GITHUB_CHANNELS.refresh)) as GithubSnapshot
+      notifyGithubListeners(nextSnapshot)
+      return nextSnapshot
+    },
+    updateSettings: async (partial: Partial<GithubSettings>) => {
+      const nextSnapshot = (await ipcRenderer.invoke(
+        GITHUB_CHANNELS.updateSettings,
+        partial,
+      )) as GithubSnapshot
+      notifyGithubListeners(nextSnapshot)
+      return nextSnapshot
+    },
   },
 }
 

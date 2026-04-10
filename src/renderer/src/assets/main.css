@@ -29,3 +29,7 @@ body {
   display: flex;
   flex-direction: column;
 }
+
+.trans {
+  transition: all 0.3s ease-out;
+}

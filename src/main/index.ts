@@ -2,6 +2,7 @@ import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
+import { GithubSyncService } from './github-sync-service'
 import { TodoStoreService } from './livestore/todo-store'
 
 const WINDOW_WIDTH = 1200
@@ -9,6 +10,7 @@ const WINDOW_HEIGHT = 800
 const NAVBAR_HEIGHT = 56
 
 const todoStore = new TodoStoreService()
+const githubSyncService = new GithubSyncService()
 
 function createWindow(): void {
   // Create the browser window.
@@ -69,6 +71,7 @@ app.whenReady().then(async () => {
   ipcMain.on('ping', () => console.log('pong'))
 
   await todoStore.init()
+  await githubSyncService.init()
 
   createWindow()
 
@@ -89,6 +92,7 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', () => {
+  void githubSyncService.shutdown()
   void todoStore.shutdown()
 })
 

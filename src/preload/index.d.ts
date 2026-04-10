@@ -1,4 +1,5 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
+import type { GithubSettings, GithubSnapshot } from '../shared/github'
 import type { Todo } from '../shared/todo'
 
 declare global {
@@ -12,6 +13,12 @@ declare global {
         add: (text: string) => Promise<void>
         toggle: (id: string) => Promise<void>
         remove: (id: string) => Promise<void>
+      }
+      github: {
+        getSnapshot: () => GithubSnapshot
+        subscribe: (listener: (snapshot: GithubSnapshot) => void) => () => void
+        refresh: () => Promise<GithubSnapshot>
+        updateSettings: (partial: Partial<GithubSettings>) => Promise<GithubSnapshot>
       }
     }
   }
