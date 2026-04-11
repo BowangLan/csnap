@@ -1,5 +1,6 @@
 import { formatDistanceToNow } from 'date-fns'
 import type { ReactNode } from 'react'
+import { Link } from '@tanstack/react-router'
 import { ArrowUpRight, GitPullRequest } from 'lucide-react'
 import { Badge } from '@renderer/components/ui/badge'
 import { Button } from '@renderer/components/ui/button'
@@ -30,34 +31,37 @@ export function PullRequestBlock({ pullRequest }: { pullRequest: GithubPullReque
   const meta = `${pullRequest.repositoryNameWithOwner} · ${pullRequest.authorLogin ?? 'unknown'} · ${formatDistanceToNow(pullRequest.updatedAt, { addSuffix: true })}`
 
   return (
-    <Row className="group flex-wrap gap-x-2 gap-y-0 rounded-lg px-2 py-2.5 transition-colors last:border-b-0 hover:bg-muted">
+    <Row className="group relative flex-wrap gap-x-2 gap-y-0 rounded-lg px-2 py-2.5 transition-colors last:border-b-0 hover:bg-muted cursor-pointer">
+      <Link
+        to="/prs/$prId"
+        params={{ prId: pullRequest.id }}
+        className="absolute inset-0 z-0 rounded-lg"
+        aria-label={`View pull request ${pullRequest.number}`}
+      />
       <Row
         className={cn(
-          'size-8 shrink-0 justify-center rounded-md bg-muted/40',
+          'relative z-10 size-8 shrink-0 justify-center rounded-md bg-muted/40 pointer-events-none',
           pullRequest.isDraft && 'ring-1 ring-inset ring-border/80'
         )}
       >
         <GitPullRequest className="size-3.5 text-muted-foreground" />
       </Row>
 
-      <Col className="min-w-0 flex-1 basis-[min(100%,12rem)]">
-        <a
-          href={pullRequest.url}
-          target="_blank"
-          rel="noreferrer"
-          className="line-clamp-2 text-sm font-medium leading-snug hover:underline sm:line-clamp-1"
+      <Col className="relative z-10 min-w-0 flex-1 basis-[min(100%,12rem)] pointer-events-none">
+        <span
+          className="line-clamp-2 text-sm font-medium leading-snug sm:line-clamp-1"
           title={`${pullRequest.title} — ${meta}`}
         >
           <span className="font-medium text-muted-foreground">#{pullRequest.number}</span> {pullRequest.title}
-        </a>
+        </span>
         <p className="mt-0.5 truncate text-xs text-muted-foreground md:hidden">{meta}</p>
       </Col>
 
-      <p className="hidden min-w-0 max-w-[min(100%,20rem)] truncate text-xs text-muted-foreground md:block">
+      <p className="relative z-10 hidden min-w-0 max-w-[min(100%,20rem)] truncate text-xs text-muted-foreground md:block pointer-events-none">
         {meta}
       </p>
 
-      <Row className="ml-auto min-w-0 flex-wrap justify-end gap-1.5">
+      <Row className="relative z-10 ml-auto min-w-0 flex-wrap justify-end gap-1.5 pointer-events-none">
         {pullRequest.isDraft ? <Badge variant="outline">Draft</Badge> : null}
         <Badge
           variant={badgeVariant(pullRequest.reviewDecision)}
@@ -72,7 +76,7 @@ export function PullRequestBlock({ pullRequest }: { pullRequest: GithubPullReque
         </span>
       </Row>
 
-      <Row className='ml-auto justify-end gap-2'>
+      <Row className="relative z-10 ml-auto justify-end gap-2 pointer-events-auto">
         <LinearIssueBadge pr={pullRequest} />
         {pullRequest.headRefName ? (
           <Col className="min-w-0 max-w-36 items-start sm:max-w-fit">

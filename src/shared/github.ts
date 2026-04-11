@@ -10,6 +10,29 @@ export interface GithubRepository {
   openPullRequestCount: number
 }
 
+export interface GithubPullRequestReviewer {
+  login: string
+  avatarUrl: string | null
+  state: string
+}
+
+export interface GithubPullRequestComment {
+  id: string
+  url: string
+  authorLogin: string | null
+  body: string
+  createdAt: number
+}
+
+export interface GithubPullRequestCommit {
+  oid: string
+  messageHeadline: string
+  url: string
+  authoredAt: number
+  authorLogin: string | null
+  authorName: string | null
+}
+
 export interface GithubPullRequest {
   id: string
   repositoryId: string
@@ -28,8 +51,17 @@ export interface GithubPullRequest {
   deletions: number
   changedFiles: number
   commentsCount: number
+  /** Issue comments on the PR (newest batch from sync). */
+  comments: GithubPullRequestComment[]
   commitsCount: number
+  /** Git commits on the PR branch (recent batch from sync, newest first). */
+  commits: GithubPullRequestCommit[]
   headRefName: string
+  /** Base branch when provided by sync; otherwise UI may assume `main`. */
+  baseRefName?: string
+  /** Markdown body when provided by sync. */
+  body?: string
+  reviewers?: GithubPullRequestReviewer[]
   ciRollupState: string | null
   ciStatuses: GithubPullRequestCiStatus[]
 }

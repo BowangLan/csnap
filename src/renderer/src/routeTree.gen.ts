@@ -17,6 +17,8 @@ import { Route as PrsRouteImport } from './routes/prs'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as PrsIndexRouteImport } from './routes/prs.index'
+import { Route as PrsPrIdRouteImport } from './routes/prs.$prId'
 
 const UsersRoute = UsersRouteImport.update({
   id: '/users',
@@ -58,37 +60,52 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PrsIndexRoute = PrsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => PrsRoute,
+} as any)
+const PrsPrIdRoute = PrsPrIdRouteImport.update({
+  id: '/$prId',
+  path: '/$prId',
+  getParentRoute: () => PrsRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/dashboard': typeof DashboardRoute
-  '/prs': typeof PrsRoute
+  '/prs': typeof PrsRouteWithChildren
   '/repos': typeof ReposRoute
   '/settings': typeof SettingsRoute
   '/todos': typeof TodosRoute
   '/users': typeof UsersRoute
+  '/prs/$prId': typeof PrsPrIdRoute
+  '/prs/': typeof PrsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/dashboard': typeof DashboardRoute
-  '/prs': typeof PrsRoute
   '/repos': typeof ReposRoute
   '/settings': typeof SettingsRoute
   '/todos': typeof TodosRoute
   '/users': typeof UsersRoute
+  '/prs/$prId': typeof PrsPrIdRoute
+  '/prs': typeof PrsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/dashboard': typeof DashboardRoute
-  '/prs': typeof PrsRoute
+  '/prs': typeof PrsRouteWithChildren
   '/repos': typeof ReposRoute
   '/settings': typeof SettingsRoute
   '/todos': typeof TodosRoute
   '/users': typeof UsersRoute
+  '/prs/$prId': typeof PrsPrIdRoute
+  '/prs/': typeof PrsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -101,16 +118,19 @@ export interface FileRouteTypes {
     | '/settings'
     | '/todos'
     | '/users'
+    | '/prs/$prId'
+    | '/prs/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/about'
     | '/dashboard'
-    | '/prs'
     | '/repos'
     | '/settings'
     | '/todos'
     | '/users'
+    | '/prs/$prId'
+    | '/prs'
   id:
     | '__root__'
     | '/'
@@ -121,13 +141,15 @@ export interface FileRouteTypes {
     | '/settings'
     | '/todos'
     | '/users'
+    | '/prs/$prId'
+    | '/prs/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AboutRoute: typeof AboutRoute
   DashboardRoute: typeof DashboardRoute
-  PrsRoute: typeof PrsRoute
+  PrsRoute: typeof PrsRouteWithChildren
   ReposRoute: typeof ReposRoute
   SettingsRoute: typeof SettingsRoute
   TodosRoute: typeof TodosRoute
@@ -192,14 +214,40 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/prs/': {
+      id: '/prs/'
+      path: '/'
+      fullPath: '/prs/'
+      preLoaderRoute: typeof PrsIndexRouteImport
+      parentRoute: typeof PrsRoute
+    }
+    '/prs/$prId': {
+      id: '/prs/$prId'
+      path: '/$prId'
+      fullPath: '/prs/$prId'
+      preLoaderRoute: typeof PrsPrIdRouteImport
+      parentRoute: typeof PrsRoute
+    }
   }
 }
+
+interface PrsRouteChildren {
+  PrsPrIdRoute: typeof PrsPrIdRoute
+  PrsIndexRoute: typeof PrsIndexRoute
+}
+
+const PrsRouteChildren: PrsRouteChildren = {
+  PrsPrIdRoute: PrsPrIdRoute,
+  PrsIndexRoute: PrsIndexRoute,
+}
+
+const PrsRouteWithChildren = PrsRoute._addFileChildren(PrsRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
   DashboardRoute: DashboardRoute,
-  PrsRoute: PrsRoute,
+  PrsRoute: PrsRouteWithChildren,
   ReposRoute: ReposRoute,
   SettingsRoute: SettingsRoute,
   TodosRoute: TodosRoute,

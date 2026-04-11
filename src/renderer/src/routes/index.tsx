@@ -59,7 +59,7 @@ function Index() {
         <Card>
           <CardHeader>
             <CardTitle>Pull Requests</CardTitle>
-            <CardDescription>Inspect active pull requests involving the connected account.</CardDescription>
+            <CardDescription>Open pull requests you authored (synced from GitHub).</CardDescription>
           </CardHeader>
           <CardContent>
             {isInitialLoading ? (

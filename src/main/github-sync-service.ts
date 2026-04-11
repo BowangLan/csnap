@@ -8,6 +8,8 @@ import {
   EMPTY_GITHUB_SNAPSHOT,
   type GithubAuthStatus,
   type GithubPullRequest,
+  type GithubPullRequestComment,
+  type GithubPullRequestCommit,
   type GithubPullRequestCiStatus,
   type GithubRepository,
   type GithubSettings,
@@ -35,7 +37,7 @@ const PULL_REQUEST_QUERY = `
     }
     search(
       type: ISSUE
-      query: "is:open is:pr involves:@me archived:false sort:updated-desc"
+      query: "is:open is:pr author:@me archived:false sort:updated-desc"
       first: $prLimit
     ) {
       nodes {
@@ -43,21 +45,46 @@ const PULL_REQUEST_QUERY = `
           id
           number
           title
+          body
           url
           state
           isDraft
           reviewDecision
           mergeable
+          baseRefName
           createdAt
           updatedAt
           additions
           deletions
           changedFiles
-          comments {
+          comments(last: 50) {
             totalCount
+            nodes {
+              id
+              url
+              body
+              createdAt
+              author {
+                login
+              }
+            }
           }
-          commits {
+          commitHistory: commits(last: 50) {
             totalCount
+            nodes {
+              commit {
+                oid
+                messageHeadline
+                url
+                authoredDate
+                author {
+                  user {
+                    login
+                  }
+                  name
+                }
+              }
+            }
           }
           latestCommit: commits(last: 1) {
             nodes {
@@ -117,11 +144,13 @@ interface GhPullRequestNode {
   id: string
   number: number
   title: string
+  body: string
   url: string
   state: string
   isDraft: boolean
   reviewDecision: string | null
   mergeable: string | null
+  baseRefName: string
   createdAt: string
   updatedAt: string
   additions: number
@@ -129,9 +158,28 @@ interface GhPullRequestNode {
   changedFiles: number
   comments: {
     totalCount: number
+    nodes: Array<{
+      id: string
+      url: string
+      body: string
+      createdAt: string
+      author: { login: string } | null
+    }>
   }
-  commits: {
+  commitHistory: {
     totalCount: number
+    nodes: Array<{
+      commit: {
+        oid: string
+        messageHeadline: string
+        url: string
+        authoredDate: string
+        author: {
+          user: { login: string } | null
+          name: string | null
+        } | null
+      }
+    }>
   }
   headRefName: string
   latestCommit: {
@@ -414,8 +462,6 @@ export class GithubSyncService {
 
         repositoriesById.set(repository.id, repository)
 
-        console.log('[gh-notify] PR node keys:', Object.keys(node))
-        console.log('[gh-notify] headRefName:', node.headRefName)
         const ciRollup = node.latestCommit.nodes[0]?.commit.statusCheckRollup ?? null
 
         return {
@@ -424,12 +470,14 @@ export class GithubSyncService {
           repositoryNameWithOwner: node.repository.nameWithOwner,
           number: node.number,
           title: node.title,
+          body: node.body || undefined,
           url: node.url,
           state: node.state,
           isDraft: node.isDraft,
           reviewDecision: node.reviewDecision,
           mergeable: node.mergeable,
           headRefName: node.headRefName ?? '',
+          baseRefName: node.baseRefName || undefined,
           authorLogin: node.author?.login ?? null,
           createdAt: toTimestamp(node.createdAt) ?? Date.now(),
           updatedAt: toTimestamp(node.updatedAt) ?? Date.now(),
@@ -437,7 +485,9 @@ export class GithubSyncService {
           deletions: node.deletions,
           changedFiles: node.changedFiles,
           commentsCount: node.comments.totalCount,
-          commitsCount: node.commits.totalCount,
+          comments: mapIssueComments(node.comments.nodes),
+          commitsCount: node.commitHistory.totalCount,
+          commits: mapPullRequestCommits(node.commitHistory.nodes),
           ciRollupState: ciRollup?.state ?? null,
           ciStatuses: (ciRollup?.contexts.nodes ?? []).map((statusNode, index) =>
             mapStatusCheckNode(node.id, index, statusNode),
@@ -530,4 +580,34 @@ function toTimestamp(value: string | null): number | null {
 
   const timestamp = Date.parse(value)
   return Number.isNaN(timestamp) ? null : timestamp
+}
+
+function mapIssueComments(
+  nodes: GhPullRequestNode['comments']['nodes'],
+): GithubPullRequestComment[] {
+  const mapped: GithubPullRequestComment[] = nodes.map((n) => ({
+    id: n.id,
+    url: n.url,
+    authorLogin: n.author?.login ?? null,
+    body: n.body ?? '',
+    createdAt: toTimestamp(n.createdAt) ?? Date.now(),
+  }))
+  return mapped.sort((a, b) => b.createdAt - a.createdAt)
+}
+
+function mapPullRequestCommits(
+  nodes: GhPullRequestNode['commitHistory']['nodes'],
+): GithubPullRequestCommit[] {
+  const mapped: GithubPullRequestCommit[] = nodes.map((n) => {
+    const c = n.commit
+    return {
+      oid: c.oid,
+      messageHeadline: c.messageHeadline ?? '',
+      url: c.url,
+      authoredAt: toTimestamp(c.authoredDate) ?? Date.now(),
+      authorLogin: c.author?.user?.login ?? null,
+      authorName: c.author?.name ?? null,
+    }
+  })
+  return mapped.sort((a, b) => b.authoredAt - a.authoredAt)
 }
