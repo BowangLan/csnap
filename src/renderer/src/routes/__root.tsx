@@ -47,7 +47,7 @@ const RootLayout = () => {
             style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
           />
         </header>
-        <div className="flex flex-1 flex-col gap-4 p-4 pt-0 mt-4">
+        <div className="flex flex-1 flex-col gap-4 py-4 px-2 pt-0 mt-4">
           <Outlet />
         </div>
       </SidebarInset>
