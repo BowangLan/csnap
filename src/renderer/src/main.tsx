@@ -9,7 +9,11 @@ import { RouterProvider, createRouter } from '@tanstack/react-router'
 import { routeTree } from './routeTree.gen'
 
 // Create a new router instance
-const router = createRouter({ routeTree })
+const router = createRouter({
+  routeTree,
+  // Preload PR detail (and other routes) on hover so clicks navigate immediately.
+  defaultPreload: 'intent',
+})
 
 document.documentElement.classList.add('dark')
 

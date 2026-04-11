@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { startTransition, useEffect, useRef, useState } from 'react'
 import type { GithubSnapshot } from '../../../shared/github'
 
 const FOCUS_REFRESH_COOLDOWN_MS = 5_000
@@ -9,7 +9,9 @@ export function useGithubSnapshot(): GithubSnapshot {
 
   useEffect(() => {
     const unsubscribe = window.api.github.subscribe((nextSnapshot) => {
-      setSnapshot(nextSnapshot)
+      startTransition(() => {
+        setSnapshot(nextSnapshot)
+      })
     })
 
     const refreshOnForeground = (): void => {

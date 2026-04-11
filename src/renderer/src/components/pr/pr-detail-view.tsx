@@ -54,8 +54,6 @@ export function PullRequestDetailView({ pullRequest: pr }: { pullRequest: Github
   const [reviewBannerVisible, setReviewBannerVisible] = React.useState(true)
 
   const rollup = ciRollupSummary(pr)
-  const ciProgress =
-    rollup.total === 0 ? 100 : Math.round(((rollup.passing + rollup.failing) / rollup.total) * 100)
   const waitingOnCi = rollup.pending > 0
 
   const repoLabel = pr.repositoryNameWithOwner.split('/')[1] ?? pr.repositoryNameWithOwner

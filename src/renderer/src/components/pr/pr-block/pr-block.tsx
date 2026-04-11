@@ -31,7 +31,7 @@ export function PullRequestBlock({ pullRequest }: { pullRequest: GithubPullReque
   const meta = `${pullRequest.repositoryNameWithOwner} · ${pullRequest.authorLogin ?? 'unknown'} · ${formatDistanceToNow(pullRequest.updatedAt, { addSuffix: true })}`
 
   return (
-    <Row className="group relative flex-wrap gap-x-2 gap-y-0 rounded-lg px-2 py-2.5 transition-colors last:border-b-0 hover:bg-muted cursor-pointer">
+    <Row className="group relative flex-wrap gap-x-2 gap-y-0 rounded-lg px-2 py-2.5 transition-[opacity,background-color] last:border-b-0 hover:bg-muted cursor-pointer has-[a[data-transitioning]]:cursor-wait has-[a[data-transitioning]]:opacity-70">
       <Link
         to="/prs/$prId"
         params={{ prId: pullRequest.id }}

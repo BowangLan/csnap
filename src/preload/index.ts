@@ -39,11 +39,18 @@ const notifyTodoListeners = (nextSnapshot: Todo[]): void => {
   }
 }
 
-const notifyGithubListeners = (nextSnapshot: GithubSnapshot): void => {
-  githubSnapshot = nextSnapshot
+const notifyGithubListeners = (): void => {
   for (const listener of githubListeners) {
     listener(githubSnapshot)
   }
+}
+
+/** Apply snapshot data immediately; notify React listeners on the next microtask so clicks/navigation win the event loop. */
+const setGithubSnapshotDeferred = (nextSnapshot: GithubSnapshot): void => {
+  githubSnapshot = nextSnapshot
+  queueMicrotask(() => {
+    notifyGithubListeners()
+  })
 }
 
 const refreshTodos = async (): Promise<Todo[]> => {
@@ -57,12 +64,12 @@ ipcRenderer.on(TODO_CHANNELS.changed, (_event, nextSnapshot: Todo[]) => {
 })
 
 ipcRenderer.on(GITHUB_CHANNELS.changed, (_event, nextSnapshot: GithubSnapshot) => {
-  notifyGithubListeners(nextSnapshot)
+  setGithubSnapshotDeferred(nextSnapshot)
 })
 
 void refreshTodos()
 void ipcRenderer.invoke(GITHUB_CHANNELS.snapshot).then((nextSnapshot) => {
-  notifyGithubListeners(nextSnapshot as GithubSnapshot)
+  setGithubSnapshotDeferred(nextSnapshot as GithubSnapshot)
 })
 
 const api = {
@@ -93,7 +100,7 @@ const api = {
     },
     refresh: async () => {
       const nextSnapshot = (await ipcRenderer.invoke(GITHUB_CHANNELS.refresh)) as GithubSnapshot
-      notifyGithubListeners(nextSnapshot)
+      setGithubSnapshotDeferred(nextSnapshot)
       return nextSnapshot
     },
     updateSettings: async (partial: Partial<GithubSettings>) => {
@@ -101,7 +108,7 @@ const api = {
         GITHUB_CHANNELS.updateSettings,
         partial,
       )) as GithubSnapshot
-      notifyGithubListeners(nextSnapshot)
+      setGithubSnapshotDeferred(nextSnapshot)
       return nextSnapshot
     },
   },

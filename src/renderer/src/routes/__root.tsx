@@ -1,5 +1,5 @@
 import React from 'react'
-import { createRootRoute, Outlet, useLocation } from '@tanstack/react-router'
+import { createRootRoute, Outlet, useLocation, useRouterState } from '@tanstack/react-router'
 import { TanStackRouterDevtools } from '@tanstack/react-router-devtools'
 import { Toaster } from '@renderer/components/ui/sonner'
 import { SidebarProvider, SidebarInset, SidebarTrigger } from '@renderer/components/ui/sidebar'
@@ -47,6 +47,9 @@ function breadcrumbLabelFromPath(pathname: string, pullRequests: { id: string; t
 const RootLayout = () => {
   const location = useLocation()
   const snapshot = useGithubSnapshot()
+  const isRouteBusy = useRouterState({
+    select: (s) => s.isTransitioning || s.isLoading,
+  })
 
   const pageName = React.useMemo(
     () => breadcrumbLabelFromPath(location.pathname, snapshot.pullRequests),
@@ -55,6 +58,14 @@ const RootLayout = () => {
 
   return (
     <SidebarProvider className="h-svh min-h-0 overflow-hidden">
+      {isRouteBusy ? (
+        <div
+          className="pointer-events-none fixed inset-x-0 top-0 z-200 h-0.5 overflow-hidden bg-primary/15"
+          aria-hidden
+        >
+          <div className="h-full w-full origin-left animate-pulse bg-primary/90 motion-reduce:animate-none" />
+        </div>
+      ) : null}
       <AppSidebar />
       <SidebarInset className="min-h-0 overflow-hidden">
         <header className="flex h-14 flex-none items-center gap-2 transition-[width,height] ease-linear group-has-[[data-collapsible=icon]]/sidebar-wrapper:h-12 border-b border-border/40">
