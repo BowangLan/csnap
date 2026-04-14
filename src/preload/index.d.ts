@@ -23,6 +23,7 @@ declare global {
         playSound: (soundName: MacOsNotificationSound) => Promise<void>
         sendTestNotification: (event: PrNotificationEvent) => Promise<void>
         switchAccount: (login: string) => Promise<GithubSnapshot>
+        squashAndMerge: (prUrl: string) => Promise<void>
       }
     }
   }

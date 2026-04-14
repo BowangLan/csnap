@@ -48,6 +48,7 @@ const GITHUB_CHANNELS = {
   switchAccount: 'github:switch-account',
   playSound: 'github:play-sound',
   sendTestNotification: 'github:send-test-notification',
+  squashMerge: 'github:squash-merge',
 } as const
 
 const SETTINGS_FILE_NAME = 'github-settings.json'
@@ -423,6 +424,9 @@ export class GithubSyncService {
     ipcMain.handle(GITHUB_CHANNELS.sendTestNotification, (_event, notifEvent: PrNotificationEvent) => {
       this.sendTestNotification(notifEvent)
     })
+    ipcMain.handle(GITHUB_CHANNELS.squashMerge, (_event, prUrl: string) =>
+      this.squashAndMerge(prUrl),
+    )
   }
 
   private unregisterIpcHandlers(): void {
@@ -433,6 +437,7 @@ export class GithubSyncService {
     ipcMain.removeHandler(GITHUB_CHANNELS.switchAccount)
     ipcMain.removeHandler(GITHUB_CHANNELS.playSound)
     ipcMain.removeHandler(GITHUB_CHANNELS.sendTestNotification)
+    ipcMain.removeHandler(GITHUB_CHANNELS.squashMerge)
   }
 
   private broadcastSnapshot(): void {
@@ -738,6 +743,15 @@ export class GithubSyncService {
       env: process.env,
     })
     return this.refresh()
+  }
+
+  async squashAndMerge(prUrl: string): Promise<void> {
+    await execFileAsync('gh', ['pr', 'merge', prUrl, '--squash', '--delete-branch'], {
+      cwd: app.getPath('home'),
+      env: process.env,
+    })
+    // Refresh after merge so the PR disappears from the list
+    void this.refresh()
   }
 
   private async runGhJson<T>(args: string[]): Promise<T> {

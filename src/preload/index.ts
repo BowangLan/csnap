@@ -15,6 +15,7 @@ const GITHUB_CHANNELS = {
   switchAccount: 'github:switch-account',
   playSound: 'github:play-sound',
   sendTestNotification: 'github:send-test-notification',
+  squashMerge: 'github:squash-merge',
 } as const
 let githubSnapshot: GithubSnapshot = {
   auth: {
@@ -126,6 +127,8 @@ const api = {
       setGithubSnapshotDeferred(nextSnapshot)
       return nextSnapshot
     },
+    squashAndMerge: (prUrl: string) =>
+      ipcRenderer.invoke(GITHUB_CHANNELS.squashMerge, prUrl) as Promise<void>,
   },
 }
 
