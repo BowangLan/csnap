@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import { TODO_CHANNELS } from '../shared/livestore/channels'
-import { type GithubSettings, type GithubSnapshot } from '../shared/github'
+import { DEFAULT_GITHUB_SETTINGS, type GithubSettings, type GithubSnapshot } from '../shared/github'
 import type { Todo } from '../shared/todo'
 
 let todosSnapshot: Todo[] = []
@@ -11,6 +11,9 @@ const GITHUB_CHANNELS = {
   changed: 'github:changed',
   refresh: 'github:refresh',
   updateSettings: 'github:update-settings',
+  setRepoPath: 'github:set-repo-path',
+  checkoutBranch: 'github:checkout-branch',
+  pickFolder: 'github:pick-folder',
 } as const
 let githubSnapshot: GithubSnapshot = {
   auth: {
@@ -19,10 +22,7 @@ let githubSnapshot: GithubSnapshot = {
   },
   repositories: [],
   pullRequests: [],
-  settings: {
-    refreshIntervalSeconds: 60,
-    soundOnPrUpdates: true,
-  },
+  settings: DEFAULT_GITHUB_SETTINGS,
   sync: {
     isRefreshing: false,
     lastRefreshedAt: null,
@@ -111,6 +111,12 @@ const api = {
       setGithubSnapshotDeferred(nextSnapshot)
       return nextSnapshot
     },
+    setRepoPath: (nameWithOwner: string, localPath: string) =>
+      ipcRenderer.invoke(GITHUB_CHANNELS.setRepoPath, nameWithOwner, localPath) as Promise<void>,
+    checkoutBranch: (nameWithOwner: string, branch: string) =>
+      ipcRenderer.invoke(GITHUB_CHANNELS.checkoutBranch, nameWithOwner, branch) as Promise<void>,
+    pickFolder: () =>
+      ipcRenderer.invoke(GITHUB_CHANNELS.pickFolder) as Promise<string | null>,
   },
 }
 

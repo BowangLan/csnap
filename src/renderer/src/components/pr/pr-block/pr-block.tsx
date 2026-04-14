@@ -9,7 +9,9 @@ import { badgeVariant, getReviewLabel, reviewDecisionTone } from '@renderer/lib/
 import type { GithubPullRequest } from '../../../../../shared/github'
 import { CiStatusSummary } from './ci-status-summary'
 import { CopyBranchButton } from './copy-branch-button'
+import { CheckoutBranchButton } from './checkout-branch-button'
 import { LinearIssueBadge } from './linear-issue-badge'
+import { useGithubSnapshot } from '@renderer/hooks/use-github-snapshot'
 
 const Row = ({
   children,
@@ -29,6 +31,8 @@ const Col = ({
 
 export function PullRequestBlock({ pullRequest }: { pullRequest: GithubPullRequest }) {
   const meta = `${pullRequest.repositoryNameWithOwner} · ${pullRequest.authorLogin ?? 'unknown'} · ${formatDistanceToNow(pullRequest.updatedAt, { addSuffix: true })}`
+  const snapshot = useGithubSnapshot()
+  const hasLocalPath = Boolean(snapshot.settings.localRepoPaths[pullRequest.repositoryNameWithOwner])
 
   return (
     <Row className="group relative flex-wrap gap-x-2 gap-y-0 rounded-lg px-2 py-2.5 transition-[opacity,background-color] last:border-b-0 hover:bg-muted cursor-pointer has-[a[data-transitioning]]:cursor-wait has-[a[data-transitioning]]:opacity-70">
@@ -82,6 +86,13 @@ export function PullRequestBlock({ pullRequest }: { pullRequest: GithubPullReque
           <Col className="min-w-0 max-w-36 items-start sm:max-w-fit">
             <CopyBranchButton branchName={pullRequest.headRefName} />
           </Col>
+        ) : null}
+        {pullRequest.headRefName ? (
+          <CheckoutBranchButton
+            nameWithOwner={pullRequest.repositoryNameWithOwner}
+            branch={pullRequest.headRefName}
+            hasLocalPath={hasLocalPath}
+          />
         ) : null}
         <Button variant="ghost" size="icon-sm" asChild className="shrink-0">
           <a

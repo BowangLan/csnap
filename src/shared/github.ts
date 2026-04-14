@@ -79,6 +79,8 @@ export interface GithubPullRequestCiStatus {
 export interface GithubSettings {
   refreshIntervalSeconds: number
   soundOnPrUpdates: boolean
+  /** Maps `nameWithOwner` (e.g. "owner/repo") to an absolute local folder path. */
+  localRepoPaths: Record<string, string>
 }
 
 export interface GithubAuthStatus {
@@ -104,6 +106,7 @@ export interface GithubSnapshot {
 export const DEFAULT_GITHUB_SETTINGS: GithubSettings = {
   refreshIntervalSeconds: 60,
   soundOnPrUpdates: true,
+  localRepoPaths: {},
 }
 
 export const EMPTY_GITHUB_SNAPSHOT: GithubSnapshot = {

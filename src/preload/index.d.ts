@@ -19,6 +19,9 @@ declare global {
         subscribe: (listener: (snapshot: GithubSnapshot) => void) => () => void
         refresh: () => Promise<GithubSnapshot>
         updateSettings: (partial: Partial<GithubSettings>) => Promise<GithubSnapshot>
+        setRepoPath: (nameWithOwner: string, localPath: string) => Promise<void>
+        checkoutBranch: (nameWithOwner: string, branch: string) => Promise<void>
+        pickFolder: () => Promise<string | null>
       }
     }
   }
