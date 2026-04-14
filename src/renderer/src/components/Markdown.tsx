@@ -106,7 +106,7 @@ export function Markdown({ children, className }: MarkdownProps) {
             <thead className="border-b border-border/60 bg-muted/40">{children}</thead>
           ),
           tbody: ({ children }) => (
-            <tbody className="divide-y divide-border/40">{children}</tbody>
+            <tbody className="divide-y divide-border">{children}</tbody>
           ),
           tr: ({ children }) => <tr className="hover:bg-muted/30">{children}</tr>,
           th: ({ children }) => (

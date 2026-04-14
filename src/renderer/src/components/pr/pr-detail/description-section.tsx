@@ -13,7 +13,7 @@ export function DescriptionSection({ pr }: { pr: GithubPullRequest }) {
       </CollapsibleTrigger>
       <CollapsibleContent>
         <div className="border-t border-border/60 px-4 py-4">
-          <div className="flex flex-wrap items-center gap-2 border-b border-border/40 pb-3">
+          <div className="flex flex-wrap items-center gap-2 border-b border-border pb-3">
             <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs" disabled>
               <Wand2 className="size-3.5 opacity-60" />
               Generate

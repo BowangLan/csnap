@@ -5,3 +5,5 @@ out
 *.log*
 
 **/codedb.snapshot
+
+.claude/
