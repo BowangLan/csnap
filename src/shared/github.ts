@@ -142,12 +142,26 @@ export interface GithubSyncState {
   lastError: string | null
 }
 
+export interface LocalRepoGitStatus {
+  nameWithOwner: string
+  localPath: string
+  branch: string | null
+  aheadCount: number
+  behindCount: number
+  changedCount: number
+  untrackedCount: number
+  hasConflicts: boolean
+  syncedAt: number
+  error: string | null
+}
+
 export interface GithubSnapshot {
   auth: GithubAuthStatus
   repositories: GithubRepository[]
   pullRequests: GithubPullRequest[]
   settings: GithubSettings
   sync: GithubSyncState
+  localRepoStatuses: Record<string, LocalRepoGitStatus>
 }
 
 export const DEFAULT_EVENT_SOUNDS: GithubSettings['eventSounds'] = {
@@ -181,4 +195,5 @@ export const EMPTY_GITHUB_SNAPSHOT: GithubSnapshot = {
     lastUpdateDetectedAt: null,
     lastError: null,
   },
+  localRepoStatuses: {},
 }

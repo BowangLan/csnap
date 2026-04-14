@@ -1,11 +1,25 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
-import type { GithubAccount, GithubSettings, GithubSnapshot, MacOsNotificationSound, PrNotificationEvent } from '../shared/github'
+import type {
+  GithubAccount,
+  GithubSettings,
+  GithubSnapshot,
+  LocalRepoGitStatus,
+  MacOsNotificationSound,
+  PrNotificationEvent,
+} from '../shared/github'
 import type { Todo } from '../shared/todo'
 
 declare global {
   interface Window {
     electron: ElectronAPI
     api: {
+      repoStatuses: {
+        getSnapshot: () => Record<string, LocalRepoGitStatus>
+        subscribe: (
+          listener: (snapshot: Record<string, LocalRepoGitStatus>) => void,
+        ) => () => void
+        syncAll: () => Promise<void>
+      }
       shell: {
         openExternal: (url: string) => void
       }

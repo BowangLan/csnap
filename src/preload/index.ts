@@ -1,11 +1,12 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import { TODO_CHANNELS } from '../shared/livestore/channels'
+import { TODO_CHANNELS, REPO_STATUS_CHANNELS } from '../shared/livestore/channels'
 import {
   DEFAULT_GITHUB_SETTINGS,
   type GithubAccount,
   type GithubSettings,
   type GithubSnapshot,
+  type LocalRepoGitStatus,
   type MacOsNotificationSound,
   type PrNotificationEvent,
 } from '../shared/github'
@@ -13,6 +14,9 @@ import type { Todo } from '../shared/todo'
 
 let todosSnapshot: Todo[] = []
 const todoListeners = new Set<(snapshot: Todo[]) => void>()
+
+let repoStatusSnapshot: Record<string, LocalRepoGitStatus> = {}
+const repoStatusListeners = new Set<(snapshot: Record<string, LocalRepoGitStatus>) => void>()
 const GITHUB_CHANNELS = {
   snapshot: 'github:snapshot',
   changed: 'github:changed',
@@ -41,6 +45,7 @@ let githubSnapshot: GithubSnapshot = {
     lastUpdateDetectedAt: null,
     lastError: null,
   },
+  localRepoStatuses: {},
 }
 const githubListeners = new Set<(snapshot: GithubSnapshot) => void>()
 
@@ -71,6 +76,13 @@ const refreshTodos = async (): Promise<Todo[]> => {
   return todosSnapshot
 }
 
+const notifyRepoStatusListeners = (next: Record<string, LocalRepoGitStatus>): void => {
+  repoStatusSnapshot = next
+  for (const listener of repoStatusListeners) {
+    listener(repoStatusSnapshot)
+  }
+}
+
 ipcRenderer.on(TODO_CHANNELS.changed, (_event, nextSnapshot: Todo[]) => {
   notifyTodoListeners(nextSnapshot)
 })
@@ -79,12 +91,33 @@ ipcRenderer.on(GITHUB_CHANNELS.changed, (_event, nextSnapshot: GithubSnapshot) =
   setGithubSnapshotDeferred(nextSnapshot)
 })
 
+ipcRenderer.on(
+  REPO_STATUS_CHANNELS.changed,
+  (_event, next: Record<string, LocalRepoGitStatus>) => {
+    notifyRepoStatusListeners(next)
+  },
+)
+
 void refreshTodos()
 void ipcRenderer.invoke(GITHUB_CHANNELS.snapshot).then((nextSnapshot) => {
   setGithubSnapshotDeferred(nextSnapshot as GithubSnapshot)
 })
+void ipcRenderer
+  .invoke(REPO_STATUS_CHANNELS.snapshot)
+  .then((next) => notifyRepoStatusListeners(next as Record<string, LocalRepoGitStatus>))
 
 const api = {
+  repoStatuses: {
+    getSnapshot: () => repoStatusSnapshot,
+    subscribe: (listener: (snapshot: Record<string, LocalRepoGitStatus>) => void) => {
+      repoStatusListeners.add(listener)
+      listener(repoStatusSnapshot)
+      return () => {
+        repoStatusListeners.delete(listener)
+      }
+    },
+    syncAll: (): Promise<void> => ipcRenderer.invoke(REPO_STATUS_CHANNELS.syncAll),
+  },
   shell: {
     openExternal: (url: string): void => {
       ipcRenderer.send('shell:open-external', url)

@@ -384,6 +384,10 @@ export class GithubSyncService {
     return this.snapshot
   }
 
+  getLocalRepoPaths(): Record<string, string> {
+    return this.snapshot.settings.localRepoPaths
+  }
+
   async refresh(): Promise<GithubSnapshot> {
     if (this.isRefreshing) {
       return this.snapshot

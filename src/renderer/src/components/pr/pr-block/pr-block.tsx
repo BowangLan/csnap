@@ -10,6 +10,7 @@ import { OpenInBrowserButton } from './open-in-browser-button'
 import { CheckoutBranchButton } from './checkout-branch-button'
 import { Icons } from '@renderer/components/icons'
 import { useGithubSnapshot } from '@renderer/hooks/use-github-snapshot'
+import { useRepoStatuses } from '@renderer/hooks/use-repo-statuses'
 
 const Row = ({
   children,
@@ -37,7 +38,10 @@ export function PullRequestBlock({ pullRequest }: { pullRequest: GithubPullReque
   const meta = `${pullRequest.repositoryNameWithOwner} · ${pullRequest.authorLogin ?? 'unknown'} · ${formatDistanceToNow(pullRequest.updatedAt, { addSuffix: true })}`
   const ciStatus = deriveCiStatus(pullRequest.ciStatuses)
   const snapshot = useGithubSnapshot()
+  const repoStatuses = useRepoStatuses()
   const hasLocalPath = Boolean(snapshot.settings.localRepoPaths[pullRequest.repositoryNameWithOwner])
+  const repoStatus = repoStatuses[pullRequest.repositoryNameWithOwner]
+  const isActive = Boolean(repoStatus?.branch && repoStatus.branch === pullRequest.headRefName)
 
   return (
     <Row className="group relative flex-wrap gap-x-1 gap-y-0 rounded-lg px-4 py-2.5 transition-[opacity,background-color] last:border-b-0 hover:bg-muted cursor-pointer has-[a[data-transitioning]]:cursor-wait has-[a[data-transitioning]]:opacity-70">
@@ -115,6 +119,7 @@ export function PullRequestBlock({ pullRequest }: { pullRequest: GithubPullReque
         nameWithOwner={pullRequest.repositoryNameWithOwner}
         branch={pullRequest.headRefName}
         hasLocalPath={hasLocalPath}
+        isActive={isActive}
       />
       <CopyUrlButton url={pullRequest.url} />
       <OpenInBrowserButton url={pullRequest.url} />
