@@ -2,7 +2,18 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 import { formatDistanceToNow } from 'date-fns'
 import { toast } from 'sonner'
-import { Bell, RefreshCw, Users, CheckCircle2, XCircle, Loader2, Volume2, FolderOpen, GitBranch, X } from 'lucide-react'
+import {
+  Bell,
+  RefreshCw,
+  Users,
+  CheckCircle2,
+  XCircle,
+  Loader2,
+  Volume2,
+  FolderOpen,
+  GitBranch,
+  X,
+} from 'lucide-react'
 import { useGithubSnapshot } from '@renderer/hooks/use-github-snapshot'
 import { Card, CardContent, CardHeader } from '@renderer/components/ui/card'
 import { Input } from '@renderer/components/ui/input'
@@ -23,6 +34,7 @@ import {
   MACOS_NOTIFICATION_SOUNDS,
   type EventSoundConfig,
   type GithubAccount,
+  type GithubRepository,
   type GithubSettings,
   type MacOsNotificationSound,
   type PrNotificationEvent,
@@ -513,7 +525,7 @@ function LocalRepositoriesCard({
   repositories,
   localRepoPaths,
 }: {
-  repositories: import('../../../shared/github').GithubRepository[]
+  repositories: GithubRepository[]
   localRepoPaths: Record<string, string>
 }) {
   const [paths, setPaths] = useState<Record<string, string>>(localRepoPaths)

@@ -1,7 +1,14 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import { TODO_CHANNELS } from '../shared/livestore/channels'
-import { DEFAULT_GITHUB_SETTINGS, type GithubAccount, type GithubSettings, type GithubSnapshot, type MacOsNotificationSound, type PrNotificationEvent } from '../shared/github'
+import {
+  DEFAULT_GITHUB_SETTINGS,
+  type GithubAccount,
+  type GithubSettings,
+  type GithubSnapshot,
+  type MacOsNotificationSound,
+  type PrNotificationEvent,
+} from '../shared/github'
 import type { Todo } from '../shared/todo'
 
 let todosSnapshot: Todo[] = []

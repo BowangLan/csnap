@@ -771,18 +771,13 @@ export class GithubSyncService {
   }
 
   private async setRepoPath(nameWithOwner: string, localPath: string): Promise<void> {
-    const next: GithubSettings = {
-      ...this.snapshot.settings,
-      localRepoPaths: {
-        ...this.snapshot.settings.localRepoPaths,
-        [nameWithOwner]: localPath,
-      },
-    }
-    if (!localPath) {
-      const paths = { ...next.localRepoPaths }
+    const paths = { ...this.snapshot.settings.localRepoPaths }
+    if (localPath) {
+      paths[nameWithOwner] = localPath
+    } else {
       delete paths[nameWithOwner]
-      next.localRepoPaths = paths
     }
+    const next: GithubSettings = { ...this.snapshot.settings, localRepoPaths: paths }
     this.snapshot = { ...this.snapshot, settings: next }
     await this.persistSettings(next)
     this.broadcastSnapshot()
@@ -791,7 +786,7 @@ export class GithubSyncService {
   private async checkoutBranch(nameWithOwner: string, branch: string): Promise<void> {
     const localPath = this.snapshot.settings.localRepoPaths[nameWithOwner]
     if (!localPath) {
-      throw new Error()
+      throw new Error(`No local path configured for ${nameWithOwner}. Set one in Settings > Local Repositories.`)
     }
     await execFileAsync('git', ['checkout', branch], {
       cwd: localPath,
