@@ -10,6 +10,8 @@ import { deriveCiStatus } from '@renderer/lib/pr-ci'
 import type { GithubPullRequest } from '../../../../../shared/github'
 import { CiStatusSummary } from './ci-status-summary'
 import { CopyBranchButton } from './copy-branch-button'
+import { CopyUrlButton } from './copy-url-button'
+import { OpenInBrowserButton } from './open-in-browser-button'
 import { LinearIssueBadge } from './linear-issue-badge'
 import { Icons } from '@renderer/components/icons'
 
@@ -110,6 +112,9 @@ export function PullRequestBlock({ pullRequest }: { pullRequest: GithubPullReque
           <span className="text-rose-600 dark:text-rose-400">-{pullRequest.deletions}</span>
         </span>
       </Row> */}
+
+      <CopyUrlButton url={pullRequest.url} />
+      <OpenInBrowserButton url={pullRequest.url} />
 
       {/* <Row className="relative z-10 ml-auto justify-end gap-2 pointer-events-auto">
         <LinearIssueBadge pr={pullRequest} />
