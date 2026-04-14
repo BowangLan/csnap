@@ -746,10 +746,16 @@ export class GithubSyncService {
   }
 
   async squashAndMerge(prUrl: string): Promise<void> {
-    await execFileAsync('gh', ['pr', 'merge', prUrl, '--squash'], {
-      cwd: app.getPath('home'),
-      env: process.env,
-    })
+    try {
+      await execFileAsync('gh', ['pr', 'merge', prUrl, '--squash'], {
+        cwd: app.getPath('home'),
+        env: process.env,
+      })
+    } catch (err) {
+      const e = err as NodeJS.ErrnoException & { stdout?: string; stderr?: string }
+      const message = (e.stderr ?? e.stdout ?? e.message ?? String(err)).trim()
+      throw new Error(message)
+    }
     // Wait briefly before refreshing — GitHub may still be processing the merge,
     // so an immediate refresh could return stale data.
     await new Promise<void>((resolve) => setTimeout(resolve, 1500))
