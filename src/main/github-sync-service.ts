@@ -57,10 +57,47 @@ const GITHUB_CHANNELS = {
 const SETTINGS_FILE_NAME = 'github-settings.json'
 const REFRESH_INTERVAL_MIN_SECONDS = 15
 const REFRESH_INTERVAL_MAX_SECONDS = 3600
+const POLL_INTERVAL_SECONDS = 30
 const PR_SEARCH_LIMIT = 100
 
+// Lightweight query (~1-2 points) for change detection.
+// Returns only the fields needed to decide whether a full fetch is warranted.
+const PR_POLL_QUERY = `
+  query($prLimit: Int!) {
+    rateLimit { remaining cost resetAt }
+    search(
+      type: ISSUE
+      query: "is:open is:pr author:@me archived:false sort:updated-desc"
+      first: $prLimit
+    ) {
+      nodes {
+        ... on PullRequest {
+          id
+          updatedAt
+          reviewDecision
+          isDraft
+          state
+          mergeable
+          comments { totalCount }
+          commitHistory: commits(last: 1) {
+            totalCount
+            nodes {
+              commit {
+                oid
+                statusCheckRollup { state }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+`
+
+// Full query (~200 points) with all details for the UI.
 const PULL_REQUEST_QUERY = `
   query($prLimit: Int!) {
+    rateLimit { remaining cost resetAt }
     viewer {
       login
     }
@@ -258,8 +295,43 @@ type GhStatusCheckNode =
       targetUrl: string | null
     }
 
+interface GhRateLimit {
+  remaining: number
+  cost: number
+  resetAt: string
+}
+
+interface GhPollPrNode {
+  id: string
+  updatedAt: string
+  reviewDecision: string | null
+  isDraft: boolean
+  state: string
+  mergeable: string | null
+  comments: { totalCount: number }
+  commitHistory: {
+    totalCount: number
+    nodes: Array<{
+      commit: {
+        oid: string
+        statusCheckRollup: { state: string | null } | null
+      }
+    }>
+  }
+}
+
+interface GhPollResponse {
+  data: {
+    rateLimit: GhRateLimit
+    search: {
+      nodes: GhPollPrNode[]
+    }
+  }
+}
+
 interface GhGraphqlResponse {
   data: {
+    rateLimit: GhRateLimit
     viewer: GhViewerResponse
     search: {
       nodes: GhPullRequestNode[]
@@ -267,11 +339,25 @@ interface GhGraphqlResponse {
   }
 }
 
+interface PrPollFingerprint {
+  id: string
+  updatedAt: string
+  headOid: string | null
+  ciRollupState: string | null
+  reviewDecision: string | null
+  isDraft: boolean
+  state: string
+  mergeable: string | null
+  commentsCount: number
+  commitsCount: number
+}
+
 export class GithubSyncService {
   private snapshot: GithubSnapshot = EMPTY_GITHUB_SNAPSHOT
-  private refreshTimer: NodeJS.Timeout | null = null
+  private pollTimer: NodeJS.Timeout | null = null
   private settingsPath = ''
   private isRefreshing = false
+  private lastPollFingerprints: PrPollFingerprint[] = []
 
   async init(): Promise<void> {
     this.settingsPath = join(app.getPath('userData'), SETTINGS_FILE_NAME)
@@ -282,15 +368,15 @@ export class GithubSyncService {
     }
 
     this.registerIpcHandlers()
-    this.scheduleRefresh()
     await this.refresh()
+    this.schedulePoll()
   }
 
   async shutdown(): Promise<void> {
     this.unregisterIpcHandlers()
-    if (this.refreshTimer) {
-      clearInterval(this.refreshTimer)
-      this.refreshTimer = null
+    if (this.pollTimer) {
+      clearInterval(this.pollTimer)
+      this.pollTimer = null
     }
   }
 
@@ -333,6 +419,7 @@ export class GithubSyncService {
       }
 
       const nextData = await this.fetchGithubData()
+      this.logRateLimit('full-fetch', nextData.rateLimit)
       const changes = this.getPrChanges(this.snapshot.pullRequests, nextData.pullRequests)
       const hasAnyChange =
         changes.hasNewCommit ||
@@ -354,6 +441,8 @@ export class GithubSyncService {
           lastError: null,
         },
       }
+
+      this.lastPollFingerprints = this.buildFingerprints(nextData.pullRequests)
 
       if (this.snapshot.pullRequests.length > 0) {
         this.playSoundForChanges(changes)
@@ -404,7 +493,7 @@ export class GithubSyncService {
     }
 
     await this.persistSettings(nextSettings)
-    this.scheduleRefresh()
+    this.schedulePoll()
     this.broadcastSnapshot()
 
     return this.snapshot
@@ -459,15 +548,42 @@ export class GithubSyncService {
     }
   }
 
-  private scheduleRefresh(): void {
-    if (this.refreshTimer) {
-      clearInterval(this.refreshTimer)
-      this.refreshTimer = null
+  private schedulePoll(): void {
+    if (this.pollTimer) {
+      clearInterval(this.pollTimer)
+      this.pollTimer = null
     }
 
-    this.refreshTimer = setInterval(() => {
+    const intervalSeconds = Math.min(
+      this.snapshot.settings.refreshIntervalSeconds,
+      POLL_INTERVAL_SECONDS,
+    )
+    this.pollTimer = setInterval(() => {
+      void this.poll()
+    }, intervalSeconds * 1000)
+  }
+
+  /**
+   * Lightweight poll: runs a cheap GraphQL query (~1-2 rate limit points) to
+   * detect whether anything changed since the last full fetch.  Only triggers
+   * a full `refresh()` when the fingerprint set differs.
+   */
+  private async poll(): Promise<void> {
+    if (this.isRefreshing) return
+
+    try {
+      const result = await this.fetchPollData()
+      this.logRateLimit('poll', result.rateLimit)
+      const nextFingerprints = this.buildFingerprintsFromPoll(result.nodes)
+
+      if (this.fingerprintsChanged(this.lastPollFingerprints, nextFingerprints)) {
+        console.log('[poll] change detected – running full refresh')
+        void this.refresh()
+      }
+    } catch (error) {
+      console.warn('[poll] lightweight poll failed, falling back to full refresh:', error)
       void this.refresh()
-    }, this.snapshot.settings.refreshIntervalSeconds * 1000)
+    }
   }
 
   private async loadSettings(): Promise<GithubSettings> {
@@ -499,6 +615,81 @@ export class GithubSyncService {
     return Math.min(Math.max(candidate, REFRESH_INTERVAL_MIN_SECONDS), REFRESH_INTERVAL_MAX_SECONDS)
   }
 
+  private async fetchPollData(): Promise<{
+    rateLimit: GhRateLimit
+    nodes: GhPollPrNode[]
+  }> {
+    const result = await this.runGhJson<GhPollResponse>([
+      'api',
+      'graphql',
+      '-f',
+      `query=${PR_POLL_QUERY}`,
+      '-F',
+      `prLimit=${PR_SEARCH_LIMIT}`,
+    ])
+    return {
+      rateLimit: result.data.rateLimit,
+      nodes: result.data.search.nodes.filter((n): n is GhPollPrNode => Boolean(n?.id)),
+    }
+  }
+
+  private buildFingerprints(pullRequests: GithubPullRequest[]): PrPollFingerprint[] {
+    return pullRequests.map((pr) => ({
+      id: pr.id,
+      updatedAt: new Date(pr.updatedAt).toISOString(),
+      headOid: pr.commits[0]?.oid ?? null,
+      ciRollupState: pr.ciRollupState?.toUpperCase() ?? null,
+      reviewDecision: pr.reviewDecision,
+      isDraft: pr.isDraft,
+      state: pr.state,
+      mergeable: pr.mergeable,
+      commentsCount: pr.commentsCount,
+      commitsCount: pr.commitsCount,
+    }))
+  }
+
+  private buildFingerprintsFromPoll(nodes: GhPollPrNode[]): PrPollFingerprint[] {
+    return nodes.map((n) => ({
+      id: n.id,
+      updatedAt: n.updatedAt,
+      headOid: n.commitHistory.nodes[0]?.commit.oid ?? null,
+      ciRollupState: n.commitHistory.nodes[0]?.commit.statusCheckRollup?.state?.toUpperCase() ?? null,
+      reviewDecision: n.reviewDecision,
+      isDraft: n.isDraft,
+      state: n.state,
+      mergeable: n.mergeable,
+      commentsCount: n.comments.totalCount,
+      commitsCount: n.commitHistory.totalCount,
+    }))
+  }
+
+  private fingerprintsChanged(prev: PrPollFingerprint[], next: PrPollFingerprint[]): boolean {
+    if (prev.length !== next.length) return true
+    const prevById = new Map(prev.map((f) => [f.id, f]))
+    for (const n of next) {
+      const p = prevById.get(n.id)
+      if (!p) return true
+      if (
+        p.updatedAt !== n.updatedAt ||
+        p.headOid !== n.headOid ||
+        p.ciRollupState !== n.ciRollupState ||
+        p.reviewDecision !== n.reviewDecision ||
+        p.isDraft !== n.isDraft ||
+        p.state !== n.state ||
+        p.mergeable !== n.mergeable ||
+        p.commentsCount !== n.commentsCount ||
+        p.commitsCount !== n.commitsCount
+      ) {
+        return true
+      }
+    }
+    return false
+  }
+
+  private logRateLimit(label: string, rl: GhRateLimit): void {
+    console.log(`[github:rateLimit:${label}] cost=${rl.cost} remaining=${rl.remaining} resetAt=${rl.resetAt}`)
+  }
+
   private async fetchAuth(): Promise<GithubAuthStatus> {
     try {
       const viewer = await this.runGhJson<GhViewerResponse>(['api', 'user'])
@@ -517,6 +708,7 @@ export class GithubSyncService {
   private async fetchGithubData(): Promise<{
     repositories: GithubRepository[]
     pullRequests: GithubPullRequest[]
+    rateLimit: GhRateLimit
   }> {
     const result = await this.runGhJson<GhGraphqlResponse>([
       'api',
@@ -585,7 +777,7 @@ export class GithubSyncService {
       return rightUpdated - leftUpdated
     })
 
-    return { repositories, pullRequests }
+    return { repositories, pullRequests, rateLimit: result.data.rateLimit }
   }
 
   private getPrChanges(
