@@ -7,7 +7,9 @@ import type { GithubPullRequest } from '../../../../../shared/github'
 import { CopyBranchButton } from './copy-branch-button'
 import { CopyUrlButton } from './copy-url-button'
 import { OpenInBrowserButton } from './open-in-browser-button'
+import { CheckoutBranchButton } from './checkout-branch-button'
 import { Icons } from '@renderer/components/icons'
+import { useGithubSnapshot } from '@renderer/hooks/use-github-snapshot'
 
 const Row = ({
   children,
@@ -34,6 +36,8 @@ const CI_DOT_CLASS = {
 export function PullRequestBlock({ pullRequest }: { pullRequest: GithubPullRequest }) {
   const meta = `${pullRequest.repositoryNameWithOwner} · ${pullRequest.authorLogin ?? 'unknown'} · ${formatDistanceToNow(pullRequest.updatedAt, { addSuffix: true })}`
   const ciStatus = deriveCiStatus(pullRequest.ciStatuses)
+  const snapshot = useGithubSnapshot()
+  const hasLocalPath = Boolean(snapshot.settings.localRepoPaths[pullRequest.repositoryNameWithOwner])
 
   return (
     <Row className="group relative flex-wrap gap-x-1 gap-y-0 rounded-lg px-4 py-2.5 transition-[opacity,background-color] last:border-b-0 hover:bg-muted cursor-pointer has-[a[data-transitioning]]:cursor-wait has-[a[data-transitioning]]:opacity-70">
@@ -108,6 +112,12 @@ export function PullRequestBlock({ pullRequest }: { pullRequest: GithubPullReque
       </Row> */}
 
       <CopyUrlButton url={pullRequest.url} />
+      {hasLocalPath && pullRequest.headRefName ? (
+        <CheckoutBranchButton
+          nameWithOwner={pullRequest.repositoryNameWithOwner}
+          branchName={pullRequest.headRefName}
+        />
+      ) : null}
       <OpenInBrowserButton url={pullRequest.url} />
 
       {/* <Row className="relative z-10 ml-auto justify-end gap-2 pointer-events-auto">

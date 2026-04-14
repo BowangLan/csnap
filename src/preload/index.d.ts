@@ -23,6 +23,9 @@ declare global {
         playSound: (soundName: MacOsNotificationSound) => Promise<void>
         sendTestNotification: (event: PrNotificationEvent) => Promise<void>
         switchAccount: (login: string) => Promise<GithubSnapshot>
+        setRepoPath: (nameWithOwner: string, localPath: string) => Promise<GithubSnapshot>
+        checkoutBranch: (nameWithOwner: string, branchName: string) => Promise<void>
+        pickFolder: () => Promise<string | null>
       }
     }
   }

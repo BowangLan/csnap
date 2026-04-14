@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Notification, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Notification, shell } from 'electron'
 import { execFile, spawn } from 'node:child_process'
 import { promisify } from 'node:util'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
@@ -48,6 +48,9 @@ const GITHUB_CHANNELS = {
   switchAccount: 'github:switch-account',
   playSound: 'github:play-sound',
   sendTestNotification: 'github:send-test-notification',
+  setRepoPath: 'github:set-repo-path',
+  checkoutBranch: 'github:checkout-branch',
+  pickFolder: 'github:pick-folder',
 } as const
 
 const SETTINGS_FILE_NAME = 'github-settings.json'
@@ -423,6 +426,13 @@ export class GithubSyncService {
     ipcMain.handle(GITHUB_CHANNELS.sendTestNotification, (_event, notifEvent: PrNotificationEvent) => {
       this.sendTestNotification(notifEvent)
     })
+    ipcMain.handle(GITHUB_CHANNELS.setRepoPath, (_event, nameWithOwner: string, localPath: string) =>
+      this.setRepoPath(nameWithOwner, localPath),
+    )
+    ipcMain.handle(GITHUB_CHANNELS.checkoutBranch, (_event, nameWithOwner: string, branchName: string) =>
+      this.checkoutBranch(nameWithOwner, branchName),
+    )
+    ipcMain.handle(GITHUB_CHANNELS.pickFolder, () => this.pickFolder())
   }
 
   private unregisterIpcHandlers(): void {
@@ -433,6 +443,9 @@ export class GithubSyncService {
     ipcMain.removeHandler(GITHUB_CHANNELS.switchAccount)
     ipcMain.removeHandler(GITHUB_CHANNELS.playSound)
     ipcMain.removeHandler(GITHUB_CHANNELS.sendTestNotification)
+    ipcMain.removeHandler(GITHUB_CHANNELS.setRepoPath)
+    ipcMain.removeHandler(GITHUB_CHANNELS.checkoutBranch)
+    ipcMain.removeHandler(GITHUB_CHANNELS.pickFolder)
   }
 
   private broadcastSnapshot(): void {
@@ -462,6 +475,7 @@ export class GithubSyncService {
         notificationSound: validateSound(parsed.notificationSound) ?? DEFAULT_GITHUB_SETTINGS.notificationSound,
         eventSounds: parseEventSounds(parsed.eventSounds),
         nativeNotifications: parsed.nativeNotifications ?? DEFAULT_GITHUB_SETTINGS.nativeNotifications,
+        localRepoPaths: parseLocalRepoPaths(parsed.localRepoPaths),
       }
     } catch {
       return DEFAULT_GITHUB_SETTINGS
@@ -715,6 +729,42 @@ export class GithubSyncService {
     }
   }
 
+  /** Set or clear a local repo path for a given nameWithOwner.
+   *  An empty string clears the entry from the map. */
+  private async setRepoPath(nameWithOwner: string, localPath: string): Promise<GithubSnapshot> {
+    const nextPaths = { ...this.snapshot.settings.localRepoPaths }
+    if (localPath === '') {
+      delete nextPaths[nameWithOwner]
+    } else {
+      nextPaths[nameWithOwner] = localPath
+    }
+    return this.updateSettings({ localRepoPaths: nextPaths })
+  }
+
+  /** Run `git checkout <branchName>` in the configured local path for the repo. */
+  private async checkoutBranch(nameWithOwner: string, branchName: string): Promise<void> {
+    const localPath = this.snapshot.settings.localRepoPaths[nameWithOwner]
+    if (!localPath) {
+      throw new Error(`No local path configured for ${nameWithOwner}`)
+    }
+    await execFileAsync('git', ['checkout', branchName], {
+      cwd: localPath,
+      env: process.env,
+    })
+    // No snapshot broadcast — checkout changes no application state.
+  }
+
+  /** Open a native folder-picker dialog and return the chosen path (or null). */
+  private async pickFolder(): Promise<string | null> {
+    const result = await dialog.showOpenDialog({
+      properties: ['openDirectory'],
+    })
+    if (result.canceled || result.filePaths.length === 0) {
+      return null
+    }
+    return result.filePaths[0]
+  }
+
   private async listAccounts(): Promise<GithubAccount[]> {
     try {
       // gh auth status writes to stderr on some versions; capture both
@@ -839,6 +889,17 @@ function parseEventSoundConfig(
     enabled: typeof obj.enabled === 'boolean' ? obj.enabled : defaults.enabled,
     sound: validateSound(obj.sound) ?? defaults.sound,
   }
+}
+
+function parseLocalRepoPaths(raw: unknown): Record<string, string> {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
+  const result: Record<string, string> = {}
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof key === 'string' && typeof value === 'string' && value !== '') {
+      result[key] = value
+    }
+  }
+  return result
 }
 
 function parseEventSounds(raw: unknown): GithubSettings['eventSounds'] {

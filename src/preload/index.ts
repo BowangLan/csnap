@@ -15,6 +15,9 @@ const GITHUB_CHANNELS = {
   switchAccount: 'github:switch-account',
   playSound: 'github:play-sound',
   sendTestNotification: 'github:send-test-notification',
+  setRepoPath: 'github:set-repo-path',
+  checkoutBranch: 'github:checkout-branch',
+  pickFolder: 'github:pick-folder',
 } as const
 let githubSnapshot: GithubSnapshot = {
   auth: {
@@ -126,6 +129,19 @@ const api = {
       setGithubSnapshotDeferred(nextSnapshot)
       return nextSnapshot
     },
+    setRepoPath: async (nameWithOwner: string, localPath: string) => {
+      const nextSnapshot = (await ipcRenderer.invoke(
+        GITHUB_CHANNELS.setRepoPath,
+        nameWithOwner,
+        localPath,
+      )) as GithubSnapshot
+      setGithubSnapshotDeferred(nextSnapshot)
+      return nextSnapshot
+    },
+    checkoutBranch: (nameWithOwner: string, branchName: string) =>
+      ipcRenderer.invoke(GITHUB_CHANNELS.checkoutBranch, nameWithOwner, branchName) as Promise<void>,
+    pickFolder: () =>
+      ipcRenderer.invoke(GITHUB_CHANNELS.pickFolder) as Promise<string | null>,
   },
 }
 

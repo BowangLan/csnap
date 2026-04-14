@@ -120,6 +120,8 @@ export interface GithubSettings {
     prApproved: EventSoundConfig
   }
   nativeNotifications: boolean
+  /** Maps `nameWithOwner` (e.g. "owner/repo") to an absolute local folder path. */
+  localRepoPaths: Record<string, string>
 }
 
 export interface GithubAuthStatus {
@@ -162,6 +164,7 @@ export const DEFAULT_GITHUB_SETTINGS: GithubSettings = {
   notificationSound: 'Glass',
   eventSounds: DEFAULT_EVENT_SOUNDS,
   nativeNotifications: true,
+  localRepoPaths: {},
 }
 
 export const EMPTY_GITHUB_SNAPSHOT: GithubSnapshot = {

@@ -2,7 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 import { formatDistanceToNow } from 'date-fns'
 import { toast } from 'sonner'
-import { Bell, RefreshCw, Users, CheckCircle2, XCircle, Loader2, Volume2 } from 'lucide-react'
+import { Bell, RefreshCw, Users, CheckCircle2, XCircle, Loader2, Volume2, FolderOpen, Folder, Trash2 } from 'lucide-react'
 import { useGithubSnapshot } from '@renderer/hooks/use-github-snapshot'
 import { Card, CardContent, CardHeader } from '@renderer/components/ui/card'
 import { Input } from '@renderer/components/ui/input'
@@ -151,6 +151,94 @@ function EventSoundRow({
         </Button>
       </div>
     </div>
+  )
+}
+
+function LocalRepositoriesCard({
+  repositories,
+  localRepoPaths,
+  onSetPath,
+}: {
+  repositories: { nameWithOwner: string }[]
+  localRepoPaths: Record<string, string>
+  onSetPath: (nameWithOwner: string, localPath: string) => Promise<void>
+}) {
+  const handlePickFolder = async (nameWithOwner: string) => {
+    try {
+      const folder = await window.api.github.pickFolder()
+      if (folder !== null) {
+        await onSetPath(nameWithOwner, folder)
+        toast.success(`Path set for ${nameWithOwner}`)
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to set path.')
+    }
+  }
+
+  const handleClearPath = async (nameWithOwner: string) => {
+    try {
+      await onSetPath(nameWithOwner, '')
+      toast.success(`Path cleared for ${nameWithOwner}`)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to clear path.')
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <SectionHeader
+          icon={Folder}
+          title="Local Repositories"
+          description="Map each repository to a local folder so you can check out branches directly from the PR list."
+        />
+      </CardHeader>
+      <CardContent className="pt-0">
+        <Separator />
+        {repositories.length === 0 ? (
+          <p className="py-4 text-sm text-muted-foreground text-center">No repositories synced yet.</p>
+        ) : (
+          <div className="divide-y">
+            {repositories.map((repo) => {
+              const path = localRepoPaths[repo.nameWithOwner]
+              return (
+                <div key={repo.nameWithOwner} className="flex items-center justify-between gap-3 py-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium truncate">{repo.nameWithOwner}</p>
+                    {path ? (
+                      <p className="mt-0.5 text-xs text-muted-foreground truncate font-mono">{path}</p>
+                    ) : (
+                      <p className="mt-0.5 text-xs text-muted-foreground">No path configured</p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handlePickFolder(repo.nameWithOwner)}
+                      className="gap-1.5"
+                    >
+                      <FolderOpen className="h-3.5 w-3.5" />
+                      {path ? 'Change' : 'Set path'}
+                    </Button>
+                    {path ? (
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => handleClearPath(repo.nameWithOwner)}
+                        title="Clear path"
+                      >
+                        <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   )
 }
 
@@ -496,6 +584,15 @@ function Settings() {
           )}
         </CardContent>
       </Card>
+
+      {/* Local Repositories */}
+      <LocalRepositoriesCard
+        repositories={snapshot.repositories}
+        localRepoPaths={snapshot.settings.localRepoPaths}
+        onSetPath={async (nameWithOwner, localPath) => {
+          await window.api.github.setRepoPath(nameWithOwner, localPath)
+        }}
+      />
 
       <div className="flex justify-end pb-2">
         <Button onClick={handleSave} disabled={isSaving}>
