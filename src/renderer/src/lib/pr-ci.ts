@@ -26,3 +26,13 @@ const CI_STATUS_PRIORITY: Record<NormalizedCiState, number> = {
 export function ciStatusPriority(state: NormalizedCiState): number {
   return CI_STATUS_PRIORITY[state]
 }
+
+export type AggregateCiStatus = 'pending' | 'failing' | 'passing' | null
+
+export function deriveCiStatus(ciStatuses: GithubPullRequestCiStatus[]): AggregateCiStatus {
+  if (ciStatuses.length === 0) return null
+  const states = ciStatuses.map(normalizeCiState)
+  if (states.some((s) => s === 'pending')) return 'pending'
+  if (states.some((s) => s === 'failing')) return 'failing'
+  return 'passing'
+}

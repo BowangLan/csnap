@@ -76,14 +76,40 @@ export interface GithubPullRequestCiStatus {
   workflowName: string | null
 }
 
+export const MACOS_NOTIFICATION_SOUNDS = [
+  'Basso',
+  'Blow',
+  'Bottle',
+  'Frog',
+  'Funk',
+  'Glass',
+  'Hero',
+  'Morse',
+  'Ping',
+  'Pop',
+  'Purr',
+  'Sosumi',
+  'Submarine',
+  'Tink',
+] as const
+
+export type MacOsNotificationSound = (typeof MACOS_NOTIFICATION_SOUNDS)[number]
+
 export interface GithubSettings {
   refreshIntervalSeconds: number
   soundOnPrUpdates: boolean
+  notificationSound: MacOsNotificationSound
 }
 
 export interface GithubAuthStatus {
   isAuthenticated: boolean
   activeLogin: string | null
+}
+
+export interface GithubAccount {
+  login: string
+  hostname: string
+  isActive: boolean
 }
 
 export interface GithubSyncState {
@@ -104,6 +130,7 @@ export interface GithubSnapshot {
 export const DEFAULT_GITHUB_SETTINGS: GithubSettings = {
   refreshIntervalSeconds: 60,
   soundOnPrUpdates: true,
+  notificationSound: 'Glass',
 }
 
 export const EMPTY_GITHUB_SNAPSHOT: GithubSnapshot = {

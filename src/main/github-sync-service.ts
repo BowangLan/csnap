@@ -1,12 +1,15 @@
 import { app, BrowserWindow, ipcMain, shell } from 'electron'
-import { execFile } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import { promisify } from 'node:util'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import {
   DEFAULT_GITHUB_SETTINGS,
   EMPTY_GITHUB_SNAPSHOT,
+  MACOS_NOTIFICATION_SOUNDS,
+  type GithubAccount,
   type GithubAuthStatus,
+  type MacOsNotificationSound,
   type GithubPullRequest,
   type GithubPullRequestComment,
   type GithubPullRequestCommit,
@@ -23,6 +26,9 @@ const GITHUB_CHANNELS = {
   changed: 'github:changed',
   refresh: 'github:refresh',
   updateSettings: 'github:update-settings',
+  listAccounts: 'github:list-accounts',
+  switchAccount: 'github:switch-account',
+  playSound: 'github:play-sound',
 } as const
 
 const SETTINGS_FILE_NAME = 'github-settings.json'
@@ -321,7 +327,7 @@ export class GithubSyncService {
       }
 
       if (prUpdated && this.snapshot.settings.soundOnPrUpdates && this.snapshot.pullRequests.length > 0) {
-        shell.beep()
+        this.playNotificationSound(this.snapshot.settings.notificationSound)
       }
     } catch (error) {
       this.snapshot = {
@@ -338,6 +344,19 @@ export class GithubSyncService {
     }
 
     return this.snapshot
+  }
+
+  playNotificationSound(soundName: MacOsNotificationSound): void {
+    if (process.platform === 'darwin') {
+      const proc = spawn('/usr/bin/afplay', [`/System/Library/Sounds/${soundName}.aiff`], {
+        stdio: 'ignore',
+      })
+      proc.on('error', () => {
+        shell.beep()
+      })
+      return
+    }
+    shell.beep()
   }
 
   async updateSettings(partial: Partial<GithubSettings>): Promise<GithubSnapshot> {
@@ -368,12 +387,22 @@ export class GithubSyncService {
     ipcMain.handle(GITHUB_CHANNELS.updateSettings, (_event, partial: Partial<GithubSettings>) =>
       this.updateSettings(partial),
     )
+    ipcMain.handle(GITHUB_CHANNELS.listAccounts, () => this.listAccounts())
+    ipcMain.handle(GITHUB_CHANNELS.switchAccount, (_event, login: string) =>
+      this.switchAccount(login),
+    )
+    ipcMain.handle(GITHUB_CHANNELS.playSound, (_event, soundName: MacOsNotificationSound) => {
+      this.playNotificationSound(soundName)
+    })
   }
 
   private unregisterIpcHandlers(): void {
     ipcMain.removeHandler(GITHUB_CHANNELS.snapshot)
     ipcMain.removeHandler(GITHUB_CHANNELS.refresh)
     ipcMain.removeHandler(GITHUB_CHANNELS.updateSettings)
+    ipcMain.removeHandler(GITHUB_CHANNELS.listAccounts)
+    ipcMain.removeHandler(GITHUB_CHANNELS.switchAccount)
+    ipcMain.removeHandler(GITHUB_CHANNELS.playSound)
   }
 
   private broadcastSnapshot(): void {
@@ -397,9 +426,15 @@ export class GithubSyncService {
     try {
       const raw = await readFile(this.settingsPath, 'utf8')
       const parsed = JSON.parse(raw) as Partial<GithubSettings>
+      const notificationSound =
+        parsed.notificationSound &&
+        (MACOS_NOTIFICATION_SOUNDS as readonly string[]).includes(parsed.notificationSound)
+          ? (parsed.notificationSound as MacOsNotificationSound)
+          : DEFAULT_GITHUB_SETTINGS.notificationSound
       return {
         refreshIntervalSeconds: this.sanitizeRefreshInterval(parsed.refreshIntervalSeconds),
         soundOnPrUpdates: parsed.soundOnPrUpdates ?? DEFAULT_GITHUB_SETTINGS.soundOnPrUpdates,
+        notificationSound,
       }
     } catch {
       return DEFAULT_GITHUB_SETTINGS
@@ -534,6 +569,31 @@ export class GithubSyncService {
     })
   }
 
+  private async listAccounts(): Promise<GithubAccount[]> {
+    try {
+      // gh auth status writes to stderr on some versions; capture both
+      const result = await execFileAsync('gh', ['auth', 'status'], {
+        cwd: app.getPath('home'),
+        env: process.env,
+      }).catch((err: NodeJS.ErrnoException & { stdout?: string; stderr?: string }) => ({
+        stdout: err.stdout ?? '',
+        stderr: err.stderr ?? '',
+      }))
+      const output = (result.stdout ?? '') + (result.stderr ?? '')
+      return parseGhAuthStatus(output)
+    } catch {
+      return []
+    }
+  }
+
+  private async switchAccount(login: string): Promise<GithubSnapshot> {
+    await execFileAsync('gh', ['auth', 'switch', '--user', login], {
+      cwd: app.getPath('home'),
+      env: process.env,
+    })
+    return this.refresh()
+  }
+
   private async runGhJson<T>(args: string[]): Promise<T> {
     const { stdout } = await execFileAsync('gh', args, {
       cwd: app.getPath('home'),
@@ -610,4 +670,51 @@ function mapPullRequestCommits(
     }
   })
   return mapped.sort((a, b) => b.authoredAt - a.authoredAt)
+}
+
+/**
+ * Parse `gh auth status` text output into a list of accounts.
+ *
+ * Example output:
+ *   github.com
+ *     ✓ Logged in to github.com account alice (keyring)
+ *     - Active account: true
+ *     ✓ Logged in to github.com account bob (keyring)
+ *     - Active account: false
+ */
+function parseGhAuthStatus(output: string): GithubAccount[] {
+  const accounts: GithubAccount[] = []
+  const lines = output.split('\n')
+  let currentHostname = ''
+  let pendingLogin: string | null = null
+
+  for (const line of lines) {
+    const trimmed = line.trim()
+
+    // Hostname line — no leading whitespace, not a status line
+    if (!line.startsWith(' ') && !line.startsWith('\t') && trimmed && !trimmed.startsWith('✓') && !trimmed.startsWith('-') && !trimmed.startsWith('!')) {
+      currentHostname = trimmed
+      continue
+    }
+
+    // Account login: "✓ Logged in to github.com account USERNAME (...)"
+    const loginMatch = trimmed.match(/^✓ Logged in to \S+ account (\S+)/)
+    if (loginMatch) {
+      pendingLogin = loginMatch[1]
+      continue
+    }
+
+    // Active flag: "- Active account: true/false"
+    const activeMatch = trimmed.match(/^- Active account: (true|false)/)
+    if (activeMatch && pendingLogin) {
+      accounts.push({
+        login: pendingLogin,
+        hostname: currentHostname,
+        isActive: activeMatch[1] === 'true',
+      })
+      pendingLogin = null
+    }
+  }
+
+  return accounts
 }

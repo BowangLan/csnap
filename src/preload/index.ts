@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import { TODO_CHANNELS } from '../shared/livestore/channels'
-import { type GithubSettings, type GithubSnapshot } from '../shared/github'
+import { type GithubAccount, type GithubSettings, type GithubSnapshot, type MacOsNotificationSound } from '../shared/github'
 import type { Todo } from '../shared/todo'
 
 let todosSnapshot: Todo[] = []
@@ -11,6 +11,9 @@ const GITHUB_CHANNELS = {
   changed: 'github:changed',
   refresh: 'github:refresh',
   updateSettings: 'github:update-settings',
+  listAccounts: 'github:list-accounts',
+  switchAccount: 'github:switch-account',
+  playSound: 'github:play-sound',
 } as const
 let githubSnapshot: GithubSnapshot = {
   auth: {
@@ -22,6 +25,7 @@ let githubSnapshot: GithubSnapshot = {
   settings: {
     refreshIntervalSeconds: 60,
     soundOnPrUpdates: true,
+    notificationSound: 'Glass' as MacOsNotificationSound,
   },
   sync: {
     isRefreshing: false,
@@ -107,6 +111,18 @@ const api = {
       const nextSnapshot = (await ipcRenderer.invoke(
         GITHUB_CHANNELS.updateSettings,
         partial,
+      )) as GithubSnapshot
+      setGithubSnapshotDeferred(nextSnapshot)
+      return nextSnapshot
+    },
+    listAccounts: () =>
+      ipcRenderer.invoke(GITHUB_CHANNELS.listAccounts) as Promise<GithubAccount[]>,
+    playSound: (soundName: MacOsNotificationSound) =>
+      ipcRenderer.invoke(GITHUB_CHANNELS.playSound, soundName) as Promise<void>,
+    switchAccount: async (login: string) => {
+      const nextSnapshot = (await ipcRenderer.invoke(
+        GITHUB_CHANNELS.switchAccount,
+        login,
       )) as GithubSnapshot
       setGithubSnapshotDeferred(nextSnapshot)
       return nextSnapshot
