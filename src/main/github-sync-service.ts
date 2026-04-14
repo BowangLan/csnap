@@ -741,16 +741,56 @@ export class GithubSyncService {
     return this.updateSettings({ localRepoPaths: nextPaths })
   }
 
-  /** Run `git checkout <branchName>` in the configured local path for the repo. */
+  /** Run `git checkout <branchName>` in the configured local path for the repo.
+   *  Stashes uncommitted changes (including untracked files) before switching,
+   *  tagging the stash with "gh-notify:<currentBranch>" so it can be restored
+   *  automatically when switching back to that branch. */
   private async checkoutBranch(nameWithOwner: string, branchName: string): Promise<void> {
     const localPath = this.snapshot.settings.localRepoPaths[nameWithOwner]
     if (!localPath) {
       throw new Error(`No local path configured for ${nameWithOwner}`)
     }
-    await execFileAsync('git', ['checkout', branchName], {
-      cwd: localPath,
-      env: process.env,
-    })
+
+    const execOpts = { cwd: localPath, env: process.env }
+
+    // 1. Get current branch name.
+    const { stdout: revParseOut } = await execFileAsync(
+      'git',
+      ['rev-parse', '--abbrev-ref', 'HEAD'],
+      execOpts,
+    )
+    const currentBranch = revParseOut.trim()
+
+    // 2. Early return if already on the target branch.
+    if (currentBranch === branchName) {
+      return
+    }
+
+    // 3. Stash if working tree is dirty (including untracked files).
+    const { stdout: statusOut } = await execFileAsync('git', ['status', '--porcelain'], execOpts)
+    if (statusOut.trim().length > 0) {
+      await execFileAsync(
+        'git',
+        ['stash', 'push', '-u', '-m', `gh-notify:${currentBranch}`],
+        execOpts,
+      )
+    }
+
+    // 4. Checkout the target branch.
+    await execFileAsync('git', ['checkout', branchName], execOpts)
+
+    // 5. Restore any stash saved when leaving the target branch.
+    try {
+      const { stdout: stashListOut } = await execFileAsync('git', ['stash', 'list'], execOpts)
+      const stashRef = findStashRef(stashListOut, branchName)
+      if (stashRef) {
+        await execFileAsync('git', ['stash', 'pop', stashRef], execOpts)
+      }
+    } catch (err) {
+      // Stash restore is best-effort — the branch switch already succeeded.
+      console.error('[checkoutBranch] Failed to restore stash for branch', branchName, err)
+    }
+
     // No snapshot broadcast — checkout changes no application state.
   }
 
@@ -934,6 +974,30 @@ function buildNativeNotificationContent(
     case 'otherChange':
       return { title: 'Pull Request Updated', body: `${pr.title}\n${location}` }
   }
+}
+
+/**
+ * Search `git stash list` output for a stash saved by gh-notify when leaving `branch`.
+ *
+ * Each line looks like:
+ *   stash@{0}: On main: gh-notify:feature-branch
+ *   stash@{1}: On feature-branch: gh-notify:main
+ *
+ * We split on ": " and check whether the last segment equals "gh-notify:<branch>".
+ * Returns the stash ref (e.g. "stash@{1}") or null if not found.
+ */
+function findStashRef(stashListOutput: string, branch: string): string | null {
+  const target = `gh-notify:${branch}`
+  for (const line of stashListOutput.split('\n')) {
+    const trimmed = line.trim()
+    if (!trimmed) continue
+    const parts = trimmed.split(': ')
+    if (parts[parts.length - 1] === target) {
+      // The stash ref is the first segment, e.g. "stash@{1}"
+      return parts[0]
+    }
+  }
+  return null
 }
 
 /**
