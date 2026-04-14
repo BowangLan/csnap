@@ -36,20 +36,64 @@ function initials(login: string): string {
   return login.slice(0, 2).toUpperCase()
 }
 
-/** Returns a human-readable reason why this PR cannot be merged right now, or null if it can. */
-function getMergeBlockReason(pr: GithubPullRequest): string | null {
-  if (pr.isDraft) return 'Draft PRs cannot be merged'
-  if (pr.mergeable === 'CONFLICTING') return 'This branch has conflicts that must be resolved'
-  if (pr.mergeable === 'UNKNOWN') return 'Checking mergeability…'
-  if (pr.reviewDecision === 'CHANGES_REQUESTED') return 'Changes have been requested'
-  return null
+type MergeStatus =
+  | { kind: 'mergeable' }
+  | { kind: 'conflicting' }
+  | { kind: 'unknown' }
+  | { kind: 'draft' }
+  | { kind: 'changes_requested' }
+
+function getMergeStatus(pr: GithubPullRequest): MergeStatus {
+  if (pr.isDraft) return { kind: 'draft' }
+  if (pr.mergeable === 'CONFLICTING') return { kind: 'conflicting' }
+  if (pr.mergeable === 'UNKNOWN') return { kind: 'unknown' }
+  if (pr.reviewDecision === 'CHANGES_REQUESTED') return { kind: 'changes_requested' }
+  return { kind: 'mergeable' }
 }
+
+const MERGE_STATUS_CONFIG = {
+  mergeable: {
+    icon: Check,
+    label: 'This branch has no conflicts with the base branch',
+    cardClass: 'border-emerald-500/25 bg-emerald-500/10',
+    iconClass: 'text-emerald-500',
+    blocked: false,
+  },
+  conflicting: {
+    icon: AlertTriangle,
+    label: 'This branch has conflicts that must be resolved',
+    cardClass: 'border-amber-500/25 bg-amber-500/10',
+    iconClass: 'text-amber-500',
+    blocked: true,
+  },
+  unknown: {
+    icon: Loader2,
+    label: 'Checking mergeability…',
+    cardClass: 'border-border/60 bg-muted/30',
+    iconClass: 'text-muted-foreground animate-spin',
+    blocked: true,
+  },
+  draft: {
+    icon: PenLine,
+    label: 'Draft pull requests cannot be merged',
+    cardClass: 'border-border/60 bg-muted/30',
+    iconClass: 'text-muted-foreground',
+    blocked: true,
+  },
+  changes_requested: {
+    icon: X,
+    label: 'Changes have been requested',
+    cardClass: 'border-rose-500/25 bg-rose-500/10',
+    iconClass: 'text-rose-500',
+    blocked: true,
+  },
+} as const
 
 type MergeConfirmState = 'idle' | 'confirm' | 'merging'
 
-function SquashMergeButton({ pr }: { pr: GithubPullRequest }) {
+function MergeCard({ pr }: { pr: GithubPullRequest }) {
   const navigate = useNavigate()
-  const [state, setState] = React.useState<MergeConfirmState>('idle')
+  const [confirmState, setConfirmState] = React.useState<MergeConfirmState>('idle')
   const confirmTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const clearConfirmTimeout = () => {
@@ -64,84 +108,71 @@ function SquashMergeButton({ pr }: { pr: GithubPullRequest }) {
   }, [])
 
   const handleFirstClick = () => {
-    setState('confirm')
-    // Auto-reset after 4 s if user does nothing
+    setConfirmState('confirm')
     clearConfirmTimeout()
-    confirmTimeoutRef.current = setTimeout(() => {
-      setState('idle')
-    }, 4000)
+    confirmTimeoutRef.current = setTimeout(() => setConfirmState('idle'), 4000)
   }
 
   const handleConfirm = async () => {
     clearConfirmTimeout()
-    setState('merging')
+    setConfirmState('merging')
     try {
       await window.api.github.squashAndMerge(pr.url)
-      toast.success('PR merged', {
-        description: `#${pr.number} squash-merged successfully.`,
-      })
-      // Navigate back to the PR list; the refresh triggered by squashAndMerge
-      // will remove this PR from the snapshot automatically.
+      toast.success('PR merged', { description: `#${pr.number} squash-merged successfully.` })
       void navigate({ to: '/prs' })
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       toast.error('Merge failed', { description: message })
-      setState('idle')
+      setConfirmState('idle')
     }
   }
 
   const handleCancel = () => {
     clearConfirmTimeout()
-    setState('idle')
+    setConfirmState('idle')
   }
 
-  if (state === 'merging') {
-    return (
-      <Button variant="default" size="sm" disabled className="gap-1.5">
-        <Loader2 className="size-3.5 animate-spin" />
-        Merging…
-      </Button>
-    )
-  }
-
-  if (state === 'confirm') {
-    return (
-      <div className="flex items-center gap-1.5">
-        <Button
-          variant="destructive"
-          size="sm"
-          onClick={() => void handleConfirm()}
-          className="gap-1.5"
-          autoFocus
-        >
-          <GitMerge className="size-3.5" />
-          Confirm merge
-        </Button>
-        <Button variant="ghost" size="sm" onClick={handleCancel}>
-          Cancel
-        </Button>
-      </div>
-    )
-  }
-
-  const blockReason = getMergeBlockReason(pr)
-  if (blockReason) {
-    return (
-      <div className="flex flex-col items-end gap-1">
-        <Button variant="outline" size="sm" disabled className="gap-1.5">
-          <AlertTriangle className="size-3.5" />
-          Squash &amp; Merge
-        </Button>
-        <p className="text-xs text-amber-500">{blockReason}</p>
-      </div>
-    )
-  }
+  const status = getMergeStatus(pr)
+  const config = MERGE_STATUS_CONFIG[status.kind]
+  const StatusIcon = config.icon
 
   return (
-    <Button variant="default" size="sm" onClick={handleFirstClick} className="gap-1.5">
-      <GitMerge className="size-3.5" />
-      Squash &amp; Merge
-    </Button>
+    <div className={cn('flex items-center justify-between gap-4 rounded-lg border px-4 py-3', config.cardClass)}>
+      <div className="flex min-w-0 items-center gap-2.5">
+        <StatusIcon className={cn('size-4 shrink-0', config.iconClass)} />
+        <p className="text-sm text-foreground/80">{config.label}</p>
+      </div>
+
+      <div className="flex shrink-0 items-center gap-1.5">
+        {confirmState === 'merging' ? (
+          <Button variant="default" size="sm" disabled className="gap-1.5">
+            <Loader2 className="size-3.5 animate-spin" />
+            Merging…
+          </Button>
+        ) : confirmState === 'confirm' ? (
+          <>
+            <Button variant="destructive" size="sm" onClick={() => void handleConfirm()} className="gap-1.5" autoFocus>
+              <GitMerge className="size-3.5" />
+              Confirm merge
+            </Button>
+            <Button variant="ghost" size="sm" onClick={handleCancel}>
+              Cancel
+            </Button>
+          </>
+        ) : (
+          <Button
+            variant="default"
+            size="sm"
+            disabled={config.blocked}
+            onClick={config.blocked ? undefined : handleFirstClick}
+            className="gap-1.5"
+          >
+            <GitMerge className="size-3.5" />
+            Squash &amp; Merge
+          </Button>
+        )}
+      </div>
+    </div>
   )
 }
 
@@ -180,7 +211,6 @@ export function PullRequestDetailView({ pullRequest: pr }: { pullRequest: Github
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <h1 className="min-w-0 text-balance text-xl md:text-3xl font-medium tracking-tight sm:text-2xl">{pr.title}</h1>
           <div className="flex shrink-0 flex-wrap items-center gap-2">
-            {pr.state === 'OPEN' && <SquashMergeButton pr={pr} />}
             <Button variant="outline" size="sm" asChild>
               <a href={pr.url} target="_blank" rel="noreferrer">
                 Review changes
@@ -216,6 +246,8 @@ export function PullRequestDetailView({ pullRequest: pr }: { pullRequest: Github
           <span className="text-xs">Updated {formatDistanceToNow(pr.updatedAt, { addSuffix: true })}</span>
         </div>
       </div>
+
+      {pr.state === 'OPEN' && <MergeCard pr={pr} />}
 
       {reviewBannerVisible && pr.reviewDecision == null ? (
         <div className="flex flex-col gap-3 rounded-lg border border-sky-500/25 bg-sky-500/10 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
