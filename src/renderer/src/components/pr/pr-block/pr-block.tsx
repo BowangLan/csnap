@@ -1,18 +1,12 @@
 import { formatDistanceToNow } from 'date-fns'
 import type { ReactNode } from 'react'
 import { Link } from '@tanstack/react-router'
-import { ArrowRight, ArrowUpRight, GitBranch, GitPullRequest, Library } from 'lucide-react'
-import { Badge } from '@renderer/components/ui/badge'
-import { Button } from '@renderer/components/ui/button'
 import { cn } from '@renderer/lib/utils'
-import { badgeVariant, getReviewLabel, reviewDecisionTone } from '@renderer/lib/pr-review'
 import { deriveCiStatus } from '@renderer/lib/pr-ci'
 import type { GithubPullRequest } from '../../../../../shared/github'
-import { CiStatusSummary } from './ci-status-summary'
 import { CopyBranchButton } from './copy-branch-button'
 import { CopyUrlButton } from './copy-url-button'
 import { OpenInBrowserButton } from './open-in-browser-button'
-import { LinearIssueBadge } from './linear-issue-badge'
 import { Icons } from '@renderer/components/icons'
 
 const Row = ({

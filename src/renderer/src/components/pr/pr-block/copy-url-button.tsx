@@ -1,4 +1,4 @@
-import { Copy, Link } from 'lucide-react'
+import { Link } from 'lucide-react'
 import { toast } from 'sonner'
 
 export function CopyUrlButton({ url }: { url: string }) {

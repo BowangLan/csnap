@@ -25,6 +25,7 @@ import {
   type GithubAccount,
   type GithubSettings,
   type MacOsNotificationSound,
+  type PrNotificationEvent,
 } from '../../../shared/github'
 
 export const Route = createFileRoute('/settings')({
@@ -92,13 +93,15 @@ function EventSoundRow({
   description,
   config,
   onChange,
-  onTest,
+  onTestSound,
+  onTestNotification,
 }: {
   label: string
   description: string
   config: EventSoundConfig
   onChange: (next: EventSoundConfig) => void
-  onTest: (sound: MacOsNotificationSound) => void
+  onTestSound: (sound: MacOsNotificationSound) => void
+  onTestNotification: () => void
 }) {
   return (
     <div className="flex items-center justify-between gap-4 py-2.5">
@@ -131,10 +134,20 @@ function EventSoundRow({
           variant="outline"
           size="sm"
           disabled={!config.enabled}
-          onClick={() => onTest(config.sound)}
+          onClick={() => onTestSound(config.sound)}
           className="gap-1"
+          title="Test sound"
         >
           <Volume2 className="h-3.5 w-3.5" />
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onTestNotification}
+          className="gap-1"
+          title="Send test notification"
+        >
+          <Bell className="h-3.5 w-3.5" />
         </Button>
       </div>
     </div>
@@ -153,6 +166,9 @@ function Settings() {
   const [eventSounds, setEventSounds] = useState<GithubSettings['eventSounds']>(
     snapshot.settings.eventSounds ?? DEFAULT_EVENT_SOUNDS,
   )
+  const [nativeNotifications, setNativeNotifications] = useState(
+    snapshot.settings.nativeNotifications,
+  )
   const [isTesting, setIsTesting] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [accounts, setAccounts] = useState<GithubAccount[]>([])
@@ -163,11 +179,13 @@ function Settings() {
     setSoundOnPrUpdates(snapshot.settings.soundOnPrUpdates)
     setNotificationSound(snapshot.settings.notificationSound)
     setEventSounds(snapshot.settings.eventSounds ?? DEFAULT_EVENT_SOUNDS)
+    setNativeNotifications(snapshot.settings.nativeNotifications)
   }, [
     snapshot.settings.refreshIntervalSeconds,
     snapshot.settings.soundOnPrUpdates,
     snapshot.settings.notificationSound,
     snapshot.settings.eventSounds,
+    snapshot.settings.nativeNotifications,
   ])
 
   useEffect(() => {
@@ -203,6 +221,16 @@ function Settings() {
     window.api.github.playSound(sound).catch(() => toast.error('Failed to play sound.'))
   }
 
+  const handleTestNotification = (event: PrNotificationEvent) => {
+    console.log('[handleTestNotification] sending event:', event)
+    window.api.github.sendTestNotification(event)
+      .then(() => console.log('[handleTestNotification] IPC resolved'))
+      .catch((err) => {
+        console.error('[handleTestNotification] IPC error:', err)
+        toast.error('Failed to send notification.')
+      })
+  }
+
   const updateEventSound = (key: keyof GithubSettings['eventSounds'], next: EventSoundConfig) => {
     setEventSounds((prev) => ({ ...prev, [key]: next }))
   }
@@ -215,6 +243,7 @@ function Settings() {
         soundOnPrUpdates,
         notificationSound,
         eventSounds,
+        nativeNotifications,
       })
       toast.success('Settings saved.')
     } catch (error) {
@@ -242,6 +271,16 @@ function Settings() {
         </CardHeader>
         <CardContent className="pt-0">
           <Separator />
+          <SettingRow
+            label="Native OS notifications"
+            description="Show a system notification for each PR event: new commits, CI results, and status changes."
+          >
+            <Switch
+              id="native-notifications"
+              checked={nativeNotifications}
+              onCheckedChange={(checked) => setNativeNotifications(Boolean(checked))}
+            />
+          </SettingRow>
           <SettingRow
             label="Sound on pull request updates"
             description="Play a sound whenever a tracked pull request changes on refresh."
@@ -298,28 +337,40 @@ function Settings() {
                 description="A new commit was pushed to the PR branch."
                 config={eventSounds.newCommit}
                 onChange={(next) => updateEventSound('newCommit', next)}
-                onTest={handleTestEventSound}
+                onTestSound={handleTestEventSound}
+                onTestNotification={() => handleTestNotification('newCommit')}
               />
               <EventSoundRow
                 label="CI check completed"
                 description="An individual CI check finished running."
                 config={eventSounds.ciCheckComplete}
                 onChange={(next) => updateEventSound('ciCheckComplete', next)}
-                onTest={handleTestEventSound}
+                onTestSound={handleTestEventSound}
+                onTestNotification={() => handleTestNotification('ciCheckCompleted')}
               />
               <EventSoundRow
                 label="All CI passed"
                 description="All CI checks completed and the overall status is passing."
                 config={eventSounds.allCiPassed}
                 onChange={(next) => updateEventSound('allCiPassed', next)}
-                onTest={handleTestEventSound}
+                onTestSound={handleTestEventSound}
+                onTestNotification={() => handleTestNotification('allCiPassed')}
               />
               <EventSoundRow
                 label="All CI failed"
                 description="All CI checks completed and the overall status is failing."
                 config={eventSounds.allCiFailed}
                 onChange={(next) => updateEventSound('allCiFailed', next)}
-                onTest={handleTestEventSound}
+                onTestSound={handleTestEventSound}
+                onTestNotification={() => handleTestNotification('allCiFailed')}
+              />
+              <EventSoundRow
+                label="PR approved"
+                description="A reviewer approved the pull request."
+                config={eventSounds.prApproved}
+                onChange={(next) => updateEventSound('prApproved', next)}
+                onTestSound={handleTestEventSound}
+                onTestNotification={() => handleTestNotification('prApproved')}
               />
             </div>
           </div>

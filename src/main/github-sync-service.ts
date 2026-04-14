@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, Notification, shell } from 'electron'
 import { execFile, spawn } from 'node:child_process'
 import { promisify } from 'node:util'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
@@ -19,16 +19,24 @@ import {
   type GithubRepository,
   type GithubSettings,
   type GithubSnapshot,
+  type PrNotificationEvent,
 } from '../shared/github'
 
 const execFileAsync = promisify(execFile)
+
+interface PrNotificationDetail {
+  pr: GithubPullRequest
+  event: PrNotificationEvent
+}
 
 interface PrChangeBreakdown {
   hasNewCommit: boolean
   hasCiCheckCompleted: boolean
   hasAllCiPassed: boolean
   hasAllCiFailed: boolean
+  hasPrApproved: boolean
   hasOtherChange: boolean
+  perPrChanges: PrNotificationDetail[]
 }
 
 const GITHUB_CHANNELS = {
@@ -39,6 +47,7 @@ const GITHUB_CHANNELS = {
   listAccounts: 'github:list-accounts',
   switchAccount: 'github:switch-account',
   playSound: 'github:play-sound',
+  sendTestNotification: 'github:send-test-notification',
 } as const
 
 const SETTINGS_FILE_NAME = 'github-settings.json'
@@ -344,6 +353,7 @@ export class GithubSyncService {
 
       if (this.snapshot.pullRequests.length > 0) {
         this.playSoundForChanges(changes)
+        this.sendNativeNotifications(changes)
       }
     } catch (error) {
       this.snapshot = {
@@ -410,6 +420,9 @@ export class GithubSyncService {
     ipcMain.handle(GITHUB_CHANNELS.playSound, (_event, soundName: MacOsNotificationSound) => {
       this.playNotificationSound(soundName)
     })
+    ipcMain.handle(GITHUB_CHANNELS.sendTestNotification, (_event, notifEvent: PrNotificationEvent) => {
+      this.sendTestNotification(notifEvent)
+    })
   }
 
   private unregisterIpcHandlers(): void {
@@ -419,6 +432,7 @@ export class GithubSyncService {
     ipcMain.removeHandler(GITHUB_CHANNELS.listAccounts)
     ipcMain.removeHandler(GITHUB_CHANNELS.switchAccount)
     ipcMain.removeHandler(GITHUB_CHANNELS.playSound)
+    ipcMain.removeHandler(GITHUB_CHANNELS.sendTestNotification)
   }
 
   private broadcastSnapshot(): void {
@@ -447,6 +461,7 @@ export class GithubSyncService {
         soundOnPrUpdates: parsed.soundOnPrUpdates ?? DEFAULT_GITHUB_SETTINGS.soundOnPrUpdates,
         notificationSound: validateSound(parsed.notificationSound) ?? DEFAULT_GITHUB_SETTINGS.notificationSound,
         eventSounds: parseEventSounds(parsed.eventSounds),
+        nativeNotifications: parsed.nativeNotifications ?? DEFAULT_GITHUB_SETTINGS.nativeNotifications,
       }
     } catch {
       return DEFAULT_GITHUB_SETTINGS
@@ -561,7 +576,9 @@ export class GithubSyncService {
       hasCiCheckCompleted: false,
       hasAllCiPassed: false,
       hasAllCiFailed: false,
+      hasPrApproved: false,
       hasOtherChange: false,
+      perPrChanges: [],
     }
 
     if (previousPullRequests.length === 0) {
@@ -582,54 +599,107 @@ export class GithubSyncService {
       }
 
       // New commit: head commit oid changed
-      if (prev.commits[0]?.oid !== next.commits[0]?.oid) {
-        result.hasNewCommit = true
-      }
+      const prHasNewCommit = prev.commits[0]?.oid !== next.commits[0]?.oid
+      if (prHasNewCommit) result.hasNewCommit = true
 
       // CI rollup state transitions
       const prevRollup = prev.ciRollupState?.toUpperCase() ?? null
       const nextRollup = next.ciRollupState?.toUpperCase() ?? null
+      let prHasAllCiPassed = false
+      let prHasAllCiFailed = false
       if (nextRollup !== prevRollup) {
         if (nextRollup === 'SUCCESS' && prevRollup !== 'SUCCESS') {
           result.hasAllCiPassed = true
+          prHasAllCiPassed = true
         } else if (
           (nextRollup === 'FAILURE' || nextRollup === 'ERROR') &&
           prevRollup !== 'FAILURE' &&
           prevRollup !== 'ERROR'
         ) {
           result.hasAllCiFailed = true
+          prHasAllCiFailed = true
         }
       }
 
       // Individual CI check completed: was pending, now done
-      if (!result.hasCiCheckCompleted) {
-        const prevCiByName = new Map(prev.ciStatuses.map((s) => [s.name, s]))
-        for (const status of next.ciStatuses) {
-          const prevStatus = prevCiByName.get(status.name)
-          if (prevStatus && isCiPending(prevStatus) && !isCiPending(status)) {
-            result.hasCiCheckCompleted = true
-            break
-          }
+      let prHasCiCheckCompleted = false
+      const prevCiByName = new Map(prev.ciStatuses.map((s) => [s.name, s]))
+      for (const status of next.ciStatuses) {
+        const prevStatus = prevCiByName.get(status.name)
+        if (prevStatus && isCiPending(prevStatus) && !isCiPending(status)) {
+          prHasCiCheckCompleted = true
+          result.hasCiCheckCompleted = true
+          break
         }
       }
 
-      // Other changes (review, state, draft)
-      if (
-        prev.reviewDecision !== next.reviewDecision ||
+      // PR approved: reviewDecision transitioned to APPROVED
+      const prHasPrApproved =
+        prev.reviewDecision !== 'APPROVED' && next.reviewDecision === 'APPROVED'
+      if (prHasPrApproved) result.hasPrApproved = true
+
+      // Other changes (review non-approval, state, draft)
+      const prHasOtherChange =
+        (prev.reviewDecision !== next.reviewDecision && !prHasPrApproved) ||
         prev.state !== next.state ||
         prev.isDraft !== next.isDraft
-      ) {
-        result.hasOtherChange = true
+      if (prHasOtherChange) result.hasOtherChange = true
+
+      // Collect per-PR detail at highest priority for native notifications
+      let event: PrNotificationEvent | null = null
+      if (prHasAllCiFailed) event = 'allCiFailed'
+      else if (prHasAllCiPassed) event = 'allCiPassed'
+      else if (prHasCiCheckCompleted) event = 'ciCheckCompleted'
+      else if (prHasNewCommit) event = 'newCommit'
+      else if (prHasPrApproved) event = 'prApproved'
+      else if (prHasOtherChange) event = 'otherChange'
+
+      if (event !== null) {
+        result.perPrChanges.push({ pr: next, event })
       }
     }
 
     return result
   }
 
+  private sendTestNotification(event: PrNotificationEvent): void {
+    console.log('[sendTestNotification] called with event:', event)
+    console.log('[sendTestNotification] Notification.isSupported():', Notification.isSupported())
+    if (!Notification.isSupported()) return
+    const fakePr = {
+      title: 'Example pull request',
+      number: 42,
+      repositoryNameWithOwner: 'owner/repo',
+      url: 'https://github.com',
+    } as GithubPullRequest
+    const { title, body } = buildNativeNotificationContent(fakePr, event)
+    console.log('[sendTestNotification] showing notification:', { title, body })
+    try {
+      new Notification({ title, body, silent: true }).show()
+      console.log('[sendTestNotification] notification shown')
+    } catch (err) {
+      console.error('[sendTestNotification] error:', err)
+    }
+  }
+
+  private sendNativeNotifications(changes: PrChangeBreakdown): void {
+    if (!this.snapshot.settings.nativeNotifications) return
+    if (!Notification.isSupported()) return
+
+    for (const { pr, event } of changes.perPrChanges) {
+      const { title, body } = buildNativeNotificationContent(pr, event)
+      const notif = new Notification({ title, body, silent: true })
+      notif.on('click', () => {
+        void shell.openExternal(pr.url)
+      })
+      notif.show()
+    }
+  }
+
   private playSoundForChanges(changes: PrChangeBreakdown): void {
     const { eventSounds, soundOnPrUpdates, notificationSound } = this.snapshot.settings
 
-    // Priority: allCiFailed > allCiPassed > ciCheckComplete > newCommit > generic
+    // Priority: allCiFailed > allCiPassed > ciCheckComplete > newCommit > prApproved > generic
     if (changes.hasAllCiFailed && eventSounds.allCiFailed.enabled) {
       this.playNotificationSound(eventSounds.allCiFailed.sound)
     } else if (changes.hasAllCiPassed && eventSounds.allCiPassed.enabled) {
@@ -638,6 +708,8 @@ export class GithubSyncService {
       this.playNotificationSound(eventSounds.ciCheckComplete.sound)
     } else if (changes.hasNewCommit && eventSounds.newCommit.enabled) {
       this.playNotificationSound(eventSounds.newCommit.sound)
+    } else if (changes.hasPrApproved && eventSounds.prApproved.enabled) {
+      this.playNotificationSound(eventSounds.prApproved.sound)
     } else if (changes.hasOtherChange && soundOnPrUpdates) {
       this.playNotificationSound(notificationSound)
     }
@@ -778,6 +850,28 @@ function parseEventSounds(raw: unknown): GithubSettings['eventSounds'] {
     ciCheckComplete: parseEventSoundConfig(obj.ciCheckComplete, d.ciCheckComplete),
     allCiPassed: parseEventSoundConfig(obj.allCiPassed, d.allCiPassed),
     allCiFailed: parseEventSoundConfig(obj.allCiFailed, d.allCiFailed),
+    prApproved: parseEventSoundConfig(obj.prApproved, d.prApproved),
+  }
+}
+
+function buildNativeNotificationContent(
+  pr: GithubPullRequest,
+  event: PrNotificationEvent,
+): { title: string; body: string } {
+  const location = `${pr.repositoryNameWithOwner} #${pr.number}`
+  switch (event) {
+    case 'allCiFailed':
+      return { title: 'CI Failed', body: `${pr.title}\n${location}` }
+    case 'allCiPassed':
+      return { title: 'CI Passed', body: `${pr.title}\n${location}` }
+    case 'ciCheckCompleted':
+      return { title: 'CI Check Completed', body: `${pr.title}\n${location}` }
+    case 'newCommit':
+      return { title: 'New Commit Pushed', body: `${pr.title}\n${location}` }
+    case 'prApproved':
+      return { title: 'PR Approved', body: `${pr.title}\n${location}` }
+    case 'otherChange':
+      return { title: 'Pull Request Updated', body: `${pr.title}\n${location}` }
   }
 }
 

@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import { TODO_CHANNELS } from '../shared/livestore/channels'
-import { DEFAULT_GITHUB_SETTINGS, type GithubAccount, type GithubSettings, type GithubSnapshot, type MacOsNotificationSound } from '../shared/github'
+import { DEFAULT_GITHUB_SETTINGS, type GithubAccount, type GithubSettings, type GithubSnapshot, type MacOsNotificationSound, type PrNotificationEvent } from '../shared/github'
 import type { Todo } from '../shared/todo'
 
 let todosSnapshot: Todo[] = []
@@ -14,6 +14,7 @@ const GITHUB_CHANNELS = {
   listAccounts: 'github:list-accounts',
   switchAccount: 'github:switch-account',
   playSound: 'github:play-sound',
+  sendTestNotification: 'github:send-test-notification',
 } as const
 let githubSnapshot: GithubSnapshot = {
   auth: {
@@ -115,6 +116,8 @@ const api = {
       ipcRenderer.invoke(GITHUB_CHANNELS.listAccounts) as Promise<GithubAccount[]>,
     playSound: (soundName: MacOsNotificationSound) =>
       ipcRenderer.invoke(GITHUB_CHANNELS.playSound, soundName) as Promise<void>,
+    sendTestNotification: (event: PrNotificationEvent) =>
+      ipcRenderer.invoke(GITHUB_CHANNELS.sendTestNotification, event) as Promise<void>,
     switchAccount: async (login: string) => {
       const nextSnapshot = (await ipcRenderer.invoke(
         GITHUB_CHANNELS.switchAccount,

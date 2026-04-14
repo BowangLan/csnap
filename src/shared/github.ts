@@ -76,6 +76,14 @@ export interface GithubPullRequestCiStatus {
   workflowName: string | null
 }
 
+export type PrNotificationEvent =
+  | 'allCiFailed'
+  | 'allCiPassed'
+  | 'ciCheckCompleted'
+  | 'newCommit'
+  | 'prApproved'
+  | 'otherChange'
+
 export const MACOS_NOTIFICATION_SOUNDS = [
   'Basso',
   'Blow',
@@ -109,7 +117,9 @@ export interface GithubSettings {
     ciCheckComplete: EventSoundConfig
     allCiPassed: EventSoundConfig
     allCiFailed: EventSoundConfig
+    prApproved: EventSoundConfig
   }
+  nativeNotifications: boolean
 }
 
 export interface GithubAuthStatus {
@@ -143,6 +153,7 @@ export const DEFAULT_EVENT_SOUNDS: GithubSettings['eventSounds'] = {
   ciCheckComplete: { enabled: false, sound: 'Ping' },
   allCiPassed: { enabled: true, sound: 'Glass' },
   allCiFailed: { enabled: true, sound: 'Basso' },
+  prApproved: { enabled: true, sound: 'Hero' },
 }
 
 export const DEFAULT_GITHUB_SETTINGS: GithubSettings = {
@@ -150,6 +161,7 @@ export const DEFAULT_GITHUB_SETTINGS: GithubSettings = {
   soundOnPrUpdates: true,
   notificationSound: 'Glass',
   eventSounds: DEFAULT_EVENT_SOUNDS,
+  nativeNotifications: true,
 }
 
 export const EMPTY_GITHUB_SNAPSHOT: GithubSnapshot = {

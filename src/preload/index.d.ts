@@ -1,5 +1,5 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
-import type { GithubAccount, GithubSettings, GithubSnapshot, MacOsNotificationSound } from '../shared/github'
+import type { GithubAccount, GithubSettings, GithubSnapshot, MacOsNotificationSound, PrNotificationEvent } from '../shared/github'
 import type { Todo } from '../shared/todo'
 
 declare global {
@@ -21,6 +21,7 @@ declare global {
         updateSettings: (partial: Partial<GithubSettings>) => Promise<GithubSnapshot>
         listAccounts: () => Promise<GithubAccount[]>
         playSound: (soundName: MacOsNotificationSound) => Promise<void>
+        sendTestNotification: (event: PrNotificationEvent) => Promise<void>
         switchAccount: (login: string) => Promise<GithubSnapshot>
       }
     }

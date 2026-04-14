@@ -1,5 +1,5 @@
 {
-  "name": "electron-vite-react-tailwindcss-starter",
+  "name": "csnap",
   "version": "1.0.0",
   "description": "An Electron application boilerplate with Vite, TypeScript, React, and TailwindCSS",
   "main": "./out/main/index.js",
