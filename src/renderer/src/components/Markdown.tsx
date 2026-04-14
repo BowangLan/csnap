@@ -3,7 +3,7 @@ import remarkGfm from 'remark-gfm'
 import { cn } from '@renderer/lib/utils'
 
 interface MarkdownProps {
-  children: string
+  children: string | undefined
   className?: string
 }
 
@@ -12,6 +12,7 @@ interface MarkdownProps {
  * that respects the app's CSS variable-based dark/light theme.
  */
 export function Markdown({ children, className }: MarkdownProps) {
+  if (!children?.trim()) return null
   return (
     <div className={cn('markdown-body text-sm leading-relaxed text-foreground/90', className)}>
       <ReactMarkdown
@@ -41,12 +42,19 @@ export function Markdown({ children, className }: MarkdownProps) {
           a: ({ href, children }) => (
             <a
               href={href}
-              target="_blank"
-              rel="noreferrer"
-              className="text-blue-600 underline underline-offset-2 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+              onClick={(e) => {
+                if (href) {
+                  e.preventDefault()
+                  window.api.shell.openExternal(href)
+                }
+              }}
+              className="cursor-pointer text-blue-600 underline underline-offset-2 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
             >
               {children}
             </a>
+          ),
+          img: ({ src, alt }) => (
+            <img src={src} alt={alt ?? ''} className="max-w-full rounded" />
           ),
           ul: ({ children }) => (
             <ul className="mb-2.5 ml-4 list-disc space-y-0.5 [&_ul]:mt-0.5">{children}</ul>

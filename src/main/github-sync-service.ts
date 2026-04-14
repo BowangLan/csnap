@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Notification, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Notification, shell } from 'electron'
 import { execFile, spawn } from 'node:child_process'
 import { promisify } from 'node:util'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
@@ -48,6 +48,10 @@ const GITHUB_CHANNELS = {
   switchAccount: 'github:switch-account',
   playSound: 'github:play-sound',
   sendTestNotification: 'github:send-test-notification',
+  squashMerge: 'github:squash-merge',
+  setRepoPath: 'github:set-repo-path',
+  checkoutBranch: 'github:checkout-branch',
+  pickFolder: 'github:pick-folder',
 } as const
 
 const SETTINGS_FILE_NAME = 'github-settings.json'
@@ -423,6 +427,16 @@ export class GithubSyncService {
     ipcMain.handle(GITHUB_CHANNELS.sendTestNotification, (_event, notifEvent: PrNotificationEvent) => {
       this.sendTestNotification(notifEvent)
     })
+    ipcMain.handle(GITHUB_CHANNELS.squashMerge, (_event, prUrl: string) =>
+      this.squashAndMerge(prUrl),
+    )
+    ipcMain.handle(GITHUB_CHANNELS.setRepoPath, (_event, nameWithOwner: string, localPath: string) =>
+      this.setRepoPath(nameWithOwner, localPath),
+    )
+    ipcMain.handle(GITHUB_CHANNELS.checkoutBranch, (_event, nameWithOwner: string, branch: string) =>
+      this.checkoutBranch(nameWithOwner, branch),
+    )
+    ipcMain.handle(GITHUB_CHANNELS.pickFolder, () => this.pickFolder())
   }
 
   private unregisterIpcHandlers(): void {
@@ -433,6 +447,10 @@ export class GithubSyncService {
     ipcMain.removeHandler(GITHUB_CHANNELS.switchAccount)
     ipcMain.removeHandler(GITHUB_CHANNELS.playSound)
     ipcMain.removeHandler(GITHUB_CHANNELS.sendTestNotification)
+    ipcMain.removeHandler(GITHUB_CHANNELS.squashMerge)
+    ipcMain.removeHandler(GITHUB_CHANNELS.setRepoPath)
+    ipcMain.removeHandler(GITHUB_CHANNELS.checkoutBranch)
+    ipcMain.removeHandler(GITHUB_CHANNELS.pickFolder)
   }
 
   private broadcastSnapshot(): void {
@@ -462,6 +480,9 @@ export class GithubSyncService {
         notificationSound: validateSound(parsed.notificationSound) ?? DEFAULT_GITHUB_SETTINGS.notificationSound,
         eventSounds: parseEventSounds(parsed.eventSounds),
         nativeNotifications: parsed.nativeNotifications ?? DEFAULT_GITHUB_SETTINGS.nativeNotifications,
+        localRepoPaths: (parsed.localRepoPaths && typeof parsed.localRepoPaths === 'object' && !Array.isArray(parsed.localRepoPaths))
+          ? parsed.localRepoPaths as Record<string, string>
+          : {},
       }
     } catch {
       return DEFAULT_GITHUB_SETTINGS
@@ -738,6 +759,49 @@ export class GithubSyncService {
       env: process.env,
     })
     return this.refresh()
+  }
+
+  async squashAndMerge(prUrl: string): Promise<void> {
+    await execFileAsync('gh', ['pr', 'merge', prUrl, '--squash', '--delete-branch'], {
+      cwd: app.getPath('home'),
+      env: process.env,
+    })
+    // Refresh after merge so the PR disappears from the list
+    void this.refresh()
+  }
+
+  private async setRepoPath(nameWithOwner: string, localPath: string): Promise<void> {
+    const next: GithubSettings = {
+      ...this.snapshot.settings,
+      localRepoPaths: {
+        ...this.snapshot.settings.localRepoPaths,
+        [nameWithOwner]: localPath,
+      },
+    }
+    if (!localPath) {
+      const paths = { ...next.localRepoPaths }
+      delete paths[nameWithOwner]
+      next.localRepoPaths = paths
+    }
+    this.snapshot = { ...this.snapshot, settings: next }
+    await this.persistSettings(next)
+    this.broadcastSnapshot()
+  }
+
+  private async checkoutBranch(nameWithOwner: string, branch: string): Promise<void> {
+    const localPath = this.snapshot.settings.localRepoPaths[nameWithOwner]
+    if (!localPath) {
+      throw new Error()
+    }
+    await execFileAsync('git', ['checkout', branch], {
+      cwd: localPath,
+      env: process.env,
+    })
+  }
+
+  private async pickFolder(): Promise<string | null> {
+    const result = await dialog.showOpenDialog({ properties: ['openDirectory'] })
+    return result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0]
   }
 
   private async runGhJson<T>(args: string[]): Promise<T> {

@@ -15,6 +15,10 @@ const GITHUB_CHANNELS = {
   switchAccount: 'github:switch-account',
   playSound: 'github:play-sound',
   sendTestNotification: 'github:send-test-notification',
+  squashMerge: 'github:squash-merge',
+  setRepoPath: 'github:set-repo-path',
+  checkoutBranch: 'github:checkout-branch',
+  pickFolder: 'github:pick-folder',
 } as const
 let githubSnapshot: GithubSnapshot = {
   auth: {
@@ -74,6 +78,11 @@ void ipcRenderer.invoke(GITHUB_CHANNELS.snapshot).then((nextSnapshot) => {
 })
 
 const api = {
+  shell: {
+    openExternal: (url: string): void => {
+      ipcRenderer.send('shell:open-external', url)
+    },
+  },
   todos: {
     getSnapshot: () => todosSnapshot,
     subscribe: (listener: (snapshot: Todo[]) => void) => {
@@ -126,6 +135,14 @@ const api = {
       setGithubSnapshotDeferred(nextSnapshot)
       return nextSnapshot
     },
+    squashAndMerge: (prUrl: string) =>
+      ipcRenderer.invoke(GITHUB_CHANNELS.squashMerge, prUrl) as Promise<void>,
+    setRepoPath: (nameWithOwner: string, localPath: string) =>
+      ipcRenderer.invoke(GITHUB_CHANNELS.setRepoPath, nameWithOwner, localPath) as Promise<void>,
+    checkoutBranch: (nameWithOwner: string, branch: string) =>
+      ipcRenderer.invoke(GITHUB_CHANNELS.checkoutBranch, nameWithOwner, branch) as Promise<void>,
+    pickFolder: () =>
+      ipcRenderer.invoke(GITHUB_CHANNELS.pickFolder) as Promise<string | null>,
   },
 }
 

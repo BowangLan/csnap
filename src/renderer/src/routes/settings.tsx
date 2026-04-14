@@ -2,7 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 import { formatDistanceToNow } from 'date-fns'
 import { toast } from 'sonner'
-import { Bell, RefreshCw, Users, CheckCircle2, XCircle, Loader2, Volume2 } from 'lucide-react'
+import { Bell, RefreshCw, Users, CheckCircle2, XCircle, Loader2, Volume2, FolderOpen, GitBranch, X } from 'lucide-react'
 import { useGithubSnapshot } from '@renderer/hooks/use-github-snapshot'
 import { Card, CardContent, CardHeader } from '@renderer/components/ui/card'
 import { Input } from '@renderer/components/ui/input'
@@ -497,12 +497,112 @@ function Settings() {
         </CardContent>
       </Card>
 
+      {/* Local Repositories */}
+      <LocalRepositoriesCard repositories={snapshot.repositories} localRepoPaths={snapshot.settings.localRepoPaths} />
+
       <div className="flex justify-end pb-2">
         <Button onClick={handleSave} disabled={isSaving}>
           {isSaving ? 'Saving…' : 'Save Changes'}
         </Button>
       </div>
     </div>
+  )
+}
+
+function LocalRepositoriesCard({
+  repositories,
+  localRepoPaths,
+}: {
+  repositories: import('../../../shared/github').GithubRepository[]
+  localRepoPaths: Record<string, string>
+}) {
+  const [paths, setPaths] = useState<Record<string, string>>(localRepoPaths)
+
+  // Keep in sync if snapshot changes externally
+  useEffect(() => {
+    setPaths(localRepoPaths)
+  }, [localRepoPaths])
+
+  const handlePickFolder = async (nameWithOwner: string) => {
+    const picked = await window.api.github.pickFolder()
+    if (picked === null) return
+    setPaths((prev) => ({ ...prev, [nameWithOwner]: picked }))
+    try {
+      await window.api.github.setRepoPath(nameWithOwner, picked)
+      toast.success(`Linked ${nameWithOwner.split('/')[1]} to local folder`)
+    } catch {
+      toast.error('Failed to save local path')
+    }
+  }
+
+  const handleClear = async (nameWithOwner: string) => {
+    setPaths((prev) => {
+      const next = { ...prev }
+      delete next[nameWithOwner]
+      return next
+    })
+    try {
+      await window.api.github.setRepoPath(nameWithOwner, '')
+    } catch {
+      toast.error('Failed to clear local path')
+    }
+  }
+
+  if (repositories.length === 0) return null
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <SectionHeader
+          icon={GitBranch}
+          title="Local Repositories"
+          description="Link tracked repos to local folders so you can check out branches directly from the PR list."
+        />
+      </CardHeader>
+      <CardContent className="pt-0">
+        <Separator />
+        <div className="divide-y">
+          {repositories.map((repo) => {
+            const localPath = paths[repo.nameWithOwner] ?? ''
+            return (
+              <div key={repo.nameWithOwner} className="flex items-center gap-3 py-3">
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium truncate">{repo.nameWithOwner}</p>
+                  {localPath ? (
+                    <p className="text-xs text-muted-foreground truncate mt-0.5">{localPath}</p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground/50 mt-0.5 italic">No local path set</p>
+                  )}
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handlePickFolder(repo.nameWithOwner)}
+                    className="gap-1.5"
+                    title="Choose folder"
+                  >
+                    <FolderOpen className="h-3.5 w-3.5" />
+                    {localPath ? 'Change' : 'Set folder'}
+                  </Button>
+                  {localPath && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleClear(repo.nameWithOwner)}
+                      title="Clear local path"
+                      className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </CardContent>
+    </Card>
   )
 }
 

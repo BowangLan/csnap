@@ -6,6 +6,9 @@ declare global {
   interface Window {
     electron: ElectronAPI
     api: {
+      shell: {
+        openExternal: (url: string) => void
+      }
       todos: {
         getSnapshot: () => Todo[]
         subscribe: (listener: (snapshot: Todo[]) => void) => () => void
@@ -23,6 +26,10 @@ declare global {
         playSound: (soundName: MacOsNotificationSound) => Promise<void>
         sendTestNotification: (event: PrNotificationEvent) => Promise<void>
         switchAccount: (login: string) => Promise<GithubSnapshot>
+        squashAndMerge: (prUrl: string) => Promise<void>
+        setRepoPath: (nameWithOwner: string, localPath: string) => Promise<void>
+        checkoutBranch: (nameWithOwner: string, branch: string) => Promise<void>
+        pickFolder: () => Promise<string | null>
       }
     }
   }

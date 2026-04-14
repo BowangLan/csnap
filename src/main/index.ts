@@ -70,6 +70,10 @@ app.whenReady().then(async () => {
   ipcMain.removeAllListeners('ping')
   ipcMain.on('ping', () => console.log('pong'))
 
+  ipcMain.on('shell:open-external', (_event, url: string) => {
+    void shell.openExternal(url)
+  })
+
   await todoStore.init()
   await githubSyncService.init()
 
