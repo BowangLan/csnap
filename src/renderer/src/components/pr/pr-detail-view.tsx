@@ -157,7 +157,7 @@ export function PullRequestDetailView({ pullRequest: pr }: { pullRequest: Github
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <h1 className="min-w-0 text-balance text-xl md:text-3xl font-medium tracking-tight sm:text-2xl">{pr.title}</h1>
           <div className="flex shrink-0 flex-wrap items-center gap-2">
-            <SquashMergeButton pr={pr} />
+            {pr.state === 'OPEN' && <SquashMergeButton pr={pr} />}
             <Button variant="outline" size="sm" asChild>
               <a href={pr.url} target="_blank" rel="noreferrer">
                 Review changes
