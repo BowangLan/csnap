@@ -95,10 +95,21 @@ export const MACOS_NOTIFICATION_SOUNDS = [
 
 export type MacOsNotificationSound = (typeof MACOS_NOTIFICATION_SOUNDS)[number]
 
+export interface EventSoundConfig {
+  enabled: boolean
+  sound: MacOsNotificationSound
+}
+
 export interface GithubSettings {
   refreshIntervalSeconds: number
   soundOnPrUpdates: boolean
   notificationSound: MacOsNotificationSound
+  eventSounds: {
+    newCommit: EventSoundConfig
+    ciCheckComplete: EventSoundConfig
+    allCiPassed: EventSoundConfig
+    allCiFailed: EventSoundConfig
+  }
 }
 
 export interface GithubAuthStatus {
@@ -127,10 +138,18 @@ export interface GithubSnapshot {
   sync: GithubSyncState
 }
 
+export const DEFAULT_EVENT_SOUNDS: GithubSettings['eventSounds'] = {
+  newCommit: { enabled: true, sound: 'Tink' },
+  ciCheckComplete: { enabled: false, sound: 'Ping' },
+  allCiPassed: { enabled: true, sound: 'Glass' },
+  allCiFailed: { enabled: true, sound: 'Basso' },
+}
+
 export const DEFAULT_GITHUB_SETTINGS: GithubSettings = {
   refreshIntervalSeconds: 60,
   soundOnPrUpdates: true,
   notificationSound: 'Glass',
+  eventSounds: DEFAULT_EVENT_SOUNDS,
 }
 
 export const EMPTY_GITHUB_SNAPSHOT: GithubSnapshot = {

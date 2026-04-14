@@ -18,7 +18,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@renderer/components/ui/select'
-import { type GithubAccount, MACOS_NOTIFICATION_SOUNDS, type MacOsNotificationSound } from '../../../shared/github'
+import {
+  DEFAULT_EVENT_SOUNDS,
+  MACOS_NOTIFICATION_SOUNDS,
+  type EventSoundConfig,
+  type GithubAccount,
+  type GithubSettings,
+  type MacOsNotificationSound,
+} from '../../../shared/github'
 
 export const Route = createFileRoute('/settings')({
   component: Settings,
@@ -80,6 +87,60 @@ function StatusRow({ label, value }: { label: string; value: string }) {
   )
 }
 
+function EventSoundRow({
+  label,
+  description,
+  config,
+  onChange,
+  onTest,
+}: {
+  label: string
+  description: string
+  config: EventSoundConfig
+  onChange: (next: EventSoundConfig) => void
+  onTest: (sound: MacOsNotificationSound) => void
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4 py-2.5">
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium">{label}</p>
+        <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>
+      </div>
+      <div className="flex items-center gap-2 shrink-0">
+        <Switch
+          checked={config.enabled}
+          onCheckedChange={(checked) => onChange({ ...config, enabled: Boolean(checked) })}
+        />
+        <Select
+          value={config.sound}
+          onValueChange={(v) => onChange({ ...config, sound: v as MacOsNotificationSound })}
+          disabled={!config.enabled}
+        >
+          <SelectTrigger size="sm" className="w-32">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {MACOS_NOTIFICATION_SOUNDS.map((sound) => (
+              <SelectItem key={sound} value={sound}>
+                {sound}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={!config.enabled}
+          onClick={() => onTest(config.sound)}
+          className="gap-1"
+        >
+          <Volume2 className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+    </div>
+  )
+}
+
 function Settings() {
   const snapshot = useGithubSnapshot()
   const [refreshIntervalSeconds, setRefreshIntervalSeconds] = useState(
@@ -88,6 +149,9 @@ function Settings() {
   const [soundOnPrUpdates, setSoundOnPrUpdates] = useState(snapshot.settings.soundOnPrUpdates)
   const [notificationSound, setNotificationSound] = useState<MacOsNotificationSound>(
     snapshot.settings.notificationSound,
+  )
+  const [eventSounds, setEventSounds] = useState<GithubSettings['eventSounds']>(
+    snapshot.settings.eventSounds ?? DEFAULT_EVENT_SOUNDS,
   )
   const [isTesting, setIsTesting] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
@@ -98,10 +162,12 @@ function Settings() {
     setRefreshIntervalSeconds(String(snapshot.settings.refreshIntervalSeconds))
     setSoundOnPrUpdates(snapshot.settings.soundOnPrUpdates)
     setNotificationSound(snapshot.settings.notificationSound)
+    setEventSounds(snapshot.settings.eventSounds ?? DEFAULT_EVENT_SOUNDS)
   }, [
     snapshot.settings.refreshIntervalSeconds,
     snapshot.settings.soundOnPrUpdates,
     snapshot.settings.notificationSound,
+    snapshot.settings.eventSounds,
   ])
 
   useEffect(() => {
@@ -133,6 +199,14 @@ function Settings() {
     }
   }
 
+  const handleTestEventSound = (sound: MacOsNotificationSound) => {
+    window.api.github.playSound(sound).catch(() => toast.error('Failed to play sound.'))
+  }
+
+  const updateEventSound = (key: keyof GithubSettings['eventSounds'], next: EventSoundConfig) => {
+    setEventSounds((prev) => ({ ...prev, [key]: next }))
+  }
+
   const handleSave = async () => {
     setIsSaving(true)
     try {
@@ -140,6 +214,7 @@ function Settings() {
         refreshIntervalSeconds: Number(refreshIntervalSeconds),
         soundOnPrUpdates,
         notificationSound,
+        eventSounds,
       })
       toast.success('Settings saved.')
     } catch (error) {
@@ -209,6 +284,43 @@ function Settings() {
                 <Volume2 className="h-3.5 w-3.5" />
                 {isTesting ? 'Playing…' : 'Test'}
               </Button>
+            </div>
+          </div>
+          <Separator />
+          <div className="py-3">
+            <p className="text-sm font-medium">Event-specific sounds</p>
+            <p className="mt-0.5 text-xs text-muted-foreground mb-3">
+              Play different sounds for specific PR and CI events. Takes priority over the generic sound above.
+            </p>
+            <div className="divide-y">
+              <EventSoundRow
+                label="New commit"
+                description="A new commit was pushed to the PR branch."
+                config={eventSounds.newCommit}
+                onChange={(next) => updateEventSound('newCommit', next)}
+                onTest={handleTestEventSound}
+              />
+              <EventSoundRow
+                label="CI check completed"
+                description="An individual CI check finished running."
+                config={eventSounds.ciCheckComplete}
+                onChange={(next) => updateEventSound('ciCheckComplete', next)}
+                onTest={handleTestEventSound}
+              />
+              <EventSoundRow
+                label="All CI passed"
+                description="All CI checks completed and the overall status is passing."
+                config={eventSounds.allCiPassed}
+                onChange={(next) => updateEventSound('allCiPassed', next)}
+                onTest={handleTestEventSound}
+              />
+              <EventSoundRow
+                label="All CI failed"
+                description="All CI checks completed and the overall status is failing."
+                config={eventSounds.allCiFailed}
+                onChange={(next) => updateEventSound('allCiFailed', next)}
+                onTest={handleTestEventSound}
+              />
             </div>
           </div>
         </CardContent>

@@ -4,9 +4,11 @@ import { promisify } from 'node:util'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import {
+  DEFAULT_EVENT_SOUNDS,
   DEFAULT_GITHUB_SETTINGS,
   EMPTY_GITHUB_SNAPSHOT,
   MACOS_NOTIFICATION_SOUNDS,
+  type EventSoundConfig,
   type GithubAccount,
   type GithubAuthStatus,
   type MacOsNotificationSound,
@@ -20,6 +22,14 @@ import {
 } from '../shared/github'
 
 const execFileAsync = promisify(execFile)
+
+interface PrChangeBreakdown {
+  hasNewCommit: boolean
+  hasCiCheckCompleted: boolean
+  hasAllCiPassed: boolean
+  hasAllCiFailed: boolean
+  hasOtherChange: boolean
+}
 
 const GITHUB_CHANNELS = {
   snapshot: 'github:snapshot',
@@ -310,7 +320,13 @@ export class GithubSyncService {
       }
 
       const nextData = await this.fetchGithubData()
-      const prUpdated = this.didPullRequestsChange(this.snapshot.pullRequests, nextData.pullRequests)
+      const changes = this.getPrChanges(this.snapshot.pullRequests, nextData.pullRequests)
+      const hasAnyChange =
+        changes.hasNewCommit ||
+        changes.hasCiCheckCompleted ||
+        changes.hasAllCiPassed ||
+        changes.hasAllCiFailed ||
+        changes.hasOtherChange
 
       this.snapshot = {
         ...this.snapshot,
@@ -321,13 +337,13 @@ export class GithubSyncService {
           ...this.snapshot.sync,
           isRefreshing: false,
           lastRefreshedAt: Date.now(),
-          lastUpdateDetectedAt: prUpdated ? Date.now() : this.snapshot.sync.lastUpdateDetectedAt,
+          lastUpdateDetectedAt: hasAnyChange ? Date.now() : this.snapshot.sync.lastUpdateDetectedAt,
           lastError: null,
         },
       }
 
-      if (prUpdated && this.snapshot.settings.soundOnPrUpdates && this.snapshot.pullRequests.length > 0) {
-        this.playNotificationSound(this.snapshot.settings.notificationSound)
+      if (this.snapshot.pullRequests.length > 0) {
+        this.playSoundForChanges(changes)
       }
     } catch (error) {
       this.snapshot = {
@@ -426,15 +442,11 @@ export class GithubSyncService {
     try {
       const raw = await readFile(this.settingsPath, 'utf8')
       const parsed = JSON.parse(raw) as Partial<GithubSettings>
-      const notificationSound =
-        parsed.notificationSound &&
-        (MACOS_NOTIFICATION_SOUNDS as readonly string[]).includes(parsed.notificationSound)
-          ? (parsed.notificationSound as MacOsNotificationSound)
-          : DEFAULT_GITHUB_SETTINGS.notificationSound
       return {
         refreshIntervalSeconds: this.sanitizeRefreshInterval(parsed.refreshIntervalSeconds),
         soundOnPrUpdates: parsed.soundOnPrUpdates ?? DEFAULT_GITHUB_SETTINGS.soundOnPrUpdates,
-        notificationSound,
+        notificationSound: validateSound(parsed.notificationSound) ?? DEFAULT_GITHUB_SETTINGS.notificationSound,
+        eventSounds: parseEventSounds(parsed.eventSounds),
       }
     } catch {
       return DEFAULT_GITHUB_SETTINGS
@@ -540,33 +552,95 @@ export class GithubSyncService {
     return { repositories, pullRequests }
   }
 
-  private didPullRequestsChange(
+  private getPrChanges(
     previousPullRequests: GithubPullRequest[],
     nextPullRequests: GithubPullRequest[],
-  ): boolean {
-    if (previousPullRequests.length === 0) {
-      return false
+  ): PrChangeBreakdown {
+    const result: PrChangeBreakdown = {
+      hasNewCommit: false,
+      hasCiCheckCompleted: false,
+      hasAllCiPassed: false,
+      hasAllCiFailed: false,
+      hasOtherChange: false,
     }
 
-    const previousById = new Map(previousPullRequests.map((pullRequest) => [pullRequest.id, pullRequest]))
+    if (previousPullRequests.length === 0) {
+      return result
+    }
+
+    const previousById = new Map(previousPullRequests.map((pr) => [pr.id, pr]))
 
     if (previousById.size !== nextPullRequests.length) {
-      return true
+      result.hasOtherChange = true
     }
 
-    return nextPullRequests.some((pullRequest) => {
-      const previous = previousById.get(pullRequest.id)
-      if (!previous) {
-        return true
+    for (const next of nextPullRequests) {
+      const prev = previousById.get(next.id)
+      if (!prev) {
+        result.hasOtherChange = true
+        continue
       }
 
-      return (
-        previous.updatedAt !== pullRequest.updatedAt ||
-        previous.reviewDecision !== pullRequest.reviewDecision ||
-        previous.state !== pullRequest.state ||
-        previous.isDraft !== pullRequest.isDraft
-      )
-    })
+      // New commit: head commit oid changed
+      if (prev.commits[0]?.oid !== next.commits[0]?.oid) {
+        result.hasNewCommit = true
+      }
+
+      // CI rollup state transitions
+      const prevRollup = prev.ciRollupState?.toUpperCase() ?? null
+      const nextRollup = next.ciRollupState?.toUpperCase() ?? null
+      if (nextRollup !== prevRollup) {
+        if (nextRollup === 'SUCCESS' && prevRollup !== 'SUCCESS') {
+          result.hasAllCiPassed = true
+        } else if (
+          (nextRollup === 'FAILURE' || nextRollup === 'ERROR') &&
+          prevRollup !== 'FAILURE' &&
+          prevRollup !== 'ERROR'
+        ) {
+          result.hasAllCiFailed = true
+        }
+      }
+
+      // Individual CI check completed: was pending, now done
+      if (!result.hasCiCheckCompleted) {
+        const prevCiByName = new Map(prev.ciStatuses.map((s) => [s.name, s]))
+        for (const status of next.ciStatuses) {
+          const prevStatus = prevCiByName.get(status.name)
+          if (prevStatus && isCiPending(prevStatus) && !isCiPending(status)) {
+            result.hasCiCheckCompleted = true
+            break
+          }
+        }
+      }
+
+      // Other changes (review, state, draft)
+      if (
+        prev.reviewDecision !== next.reviewDecision ||
+        prev.state !== next.state ||
+        prev.isDraft !== next.isDraft
+      ) {
+        result.hasOtherChange = true
+      }
+    }
+
+    return result
+  }
+
+  private playSoundForChanges(changes: PrChangeBreakdown): void {
+    const { eventSounds, soundOnPrUpdates, notificationSound } = this.snapshot.settings
+
+    // Priority: allCiFailed > allCiPassed > ciCheckComplete > newCommit > generic
+    if (changes.hasAllCiFailed && eventSounds.allCiFailed.enabled) {
+      this.playNotificationSound(eventSounds.allCiFailed.sound)
+    } else if (changes.hasAllCiPassed && eventSounds.allCiPassed.enabled) {
+      this.playNotificationSound(eventSounds.allCiPassed.sound)
+    } else if (changes.hasCiCheckCompleted && eventSounds.ciCheckComplete.enabled) {
+      this.playNotificationSound(eventSounds.ciCheckComplete.sound)
+    } else if (changes.hasNewCommit && eventSounds.newCommit.enabled) {
+      this.playNotificationSound(eventSounds.newCommit.sound)
+    } else if (changes.hasOtherChange && soundOnPrUpdates) {
+      this.playNotificationSound(notificationSound)
+    }
   }
 
   private async listAccounts(): Promise<GithubAccount[]> {
@@ -670,6 +744,41 @@ function mapPullRequestCommits(
     }
   })
   return mapped.sort((a, b) => b.authoredAt - a.authoredAt)
+}
+
+function isCiPending(status: GithubPullRequestCiStatus): boolean {
+  const value = (status.conclusion ?? status.status).toUpperCase()
+  return ['QUEUED', 'IN_PROGRESS', 'PENDING', 'EXPECTED', 'WAITING', 'REQUESTED'].includes(value)
+}
+
+function validateSound(sound: string | undefined | null): MacOsNotificationSound | null {
+  return sound && (MACOS_NOTIFICATION_SOUNDS as readonly string[]).includes(sound)
+    ? (sound as MacOsNotificationSound)
+    : null
+}
+
+function parseEventSoundConfig(
+  raw: unknown,
+  defaults: { enabled: boolean; sound: MacOsNotificationSound },
+): EventSoundConfig {
+  if (!raw || typeof raw !== 'object') return defaults
+  const obj = raw as Partial<EventSoundConfig>
+  return {
+    enabled: typeof obj.enabled === 'boolean' ? obj.enabled : defaults.enabled,
+    sound: validateSound(obj.sound) ?? defaults.sound,
+  }
+}
+
+function parseEventSounds(raw: unknown): GithubSettings['eventSounds'] {
+  const d = DEFAULT_EVENT_SOUNDS
+  if (!raw || typeof raw !== 'object') return d
+  const obj = raw as Partial<GithubSettings['eventSounds']>
+  return {
+    newCommit: parseEventSoundConfig(obj.newCommit, d.newCommit),
+    ciCheckComplete: parseEventSoundConfig(obj.ciCheckComplete, d.ciCheckComplete),
+    allCiPassed: parseEventSoundConfig(obj.allCiPassed, d.allCiPassed),
+    allCiFailed: parseEventSoundConfig(obj.allCiFailed, d.allCiFailed),
+  }
 }
 
 /**

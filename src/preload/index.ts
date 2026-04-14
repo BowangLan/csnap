@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import { TODO_CHANNELS } from '../shared/livestore/channels'
-import { type GithubAccount, type GithubSettings, type GithubSnapshot, type MacOsNotificationSound } from '../shared/github'
+import { DEFAULT_GITHUB_SETTINGS, type GithubAccount, type GithubSettings, type GithubSnapshot, type MacOsNotificationSound } from '../shared/github'
 import type { Todo } from '../shared/todo'
 
 let todosSnapshot: Todo[] = []
@@ -22,11 +22,7 @@ let githubSnapshot: GithubSnapshot = {
   },
   repositories: [],
   pullRequests: [],
-  settings: {
-    refreshIntervalSeconds: 60,
-    soundOnPrUpdates: true,
-    notificationSound: 'Glass' as MacOsNotificationSound,
-  },
+  settings: DEFAULT_GITHUB_SETTINGS,
   sync: {
     isRefreshing: false,
     lastRefreshedAt: null,
