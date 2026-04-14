@@ -1,5 +1,6 @@
 import { formatDistanceToNow } from 'date-fns'
 import {
+  AlertTriangle,
   ArrowRight,
   Bot,
   Check,
@@ -33,6 +34,15 @@ import type { GithubPullRequest } from '../../../../shared/github'
 
 function initials(login: string): string {
   return login.slice(0, 2).toUpperCase()
+}
+
+/** Returns a human-readable reason why this PR cannot be merged right now, or null if it can. */
+function getMergeBlockReason(pr: GithubPullRequest): string | null {
+  if (pr.isDraft) return 'Draft PRs cannot be merged'
+  if (pr.mergeable === 'CONFLICTING') return 'This branch has conflicts that must be resolved'
+  if (pr.mergeable === 'UNKNOWN') return 'Checking mergeability…'
+  if (pr.reviewDecision === 'CHANGES_REQUESTED') return 'Changes have been requested'
+  return null
 }
 
 type MergeConfirmState = 'idle' | 'confirm' | 'merging'
@@ -110,6 +120,19 @@ function SquashMergeButton({ pr }: { pr: GithubPullRequest }) {
         <Button variant="ghost" size="sm" onClick={handleCancel}>
           Cancel
         </Button>
+      </div>
+    )
+  }
+
+  const blockReason = getMergeBlockReason(pr)
+  if (blockReason) {
+    return (
+      <div className="flex flex-col items-end gap-1">
+        <Button variant="outline" size="sm" disabled className="gap-1.5">
+          <AlertTriangle className="size-3.5" />
+          Squash &amp; Merge
+        </Button>
+        <p className="text-xs text-amber-500">{blockReason}</p>
       </div>
     )
   }
