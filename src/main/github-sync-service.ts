@@ -746,11 +746,13 @@ export class GithubSyncService {
   }
 
   async squashAndMerge(prUrl: string): Promise<void> {
-    await execFileAsync('gh', ['pr', 'merge', prUrl, '--squash', '--delete-branch'], {
+    await execFileAsync('gh', ['pr', 'merge', prUrl, '--squash'], {
       cwd: app.getPath('home'),
       env: process.env,
     })
-    // Refresh after merge so the PR disappears from the list
+    // Wait briefly before refreshing — GitHub may still be processing the merge,
+    // so an immediate refresh could return stale data.
+    await new Promise<void>((resolve) => setTimeout(resolve, 1500))
     void this.refresh()
   }
 

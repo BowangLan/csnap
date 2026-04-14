@@ -68,7 +68,7 @@ function SquashMergeButton({ pr }: { pr: GithubPullRequest }) {
     try {
       await window.api.github.squashAndMerge(pr.url)
       toast.success('PR merged', {
-        description: `#${pr.number} squash-merged and branch deleted.`,
+        description: `#${pr.number} squash-merged successfully.`,
       })
       // Navigate back to the PR list; the refresh triggered by squashAndMerge
       // will remove this PR from the snapshot automatically.
