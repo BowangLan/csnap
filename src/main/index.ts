@@ -58,7 +58,7 @@ function createWindow(): void {
 // Some APIs can only be used after this event occurs.
 app.whenReady().then(async () => {
   // Set app user model id for windows
-  electronApp.setAppUserModelId('com.electron')
+  electronApp.setAppUserModelId('com.csnap.app')
 
   // Default open or close DevTools by F12 in development
   // and ignore CommandOrControl + R in production.
@@ -69,6 +69,10 @@ app.whenReady().then(async () => {
 
   ipcMain.removeAllListeners('ping')
   ipcMain.on('ping', () => console.log('pong'))
+
+  ipcMain.on('shell:open-external', (_event, url: string) => {
+    void shell.openExternal(url)
+  })
 
   await todoStore.init()
   await githubSyncService.init()

@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import { TODO_CHANNELS } from '../shared/livestore/channels'
-import { type GithubSettings, type GithubSnapshot } from '../shared/github'
+import { DEFAULT_GITHUB_SETTINGS, type GithubAccount, type GithubSettings, type GithubSnapshot, type MacOsNotificationSound, type PrNotificationEvent } from '../shared/github'
 import type { Todo } from '../shared/todo'
 
 let todosSnapshot: Todo[] = []
@@ -11,6 +11,14 @@ const GITHUB_CHANNELS = {
   changed: 'github:changed',
   refresh: 'github:refresh',
   updateSettings: 'github:update-settings',
+  listAccounts: 'github:list-accounts',
+  switchAccount: 'github:switch-account',
+  playSound: 'github:play-sound',
+  sendTestNotification: 'github:send-test-notification',
+  squashMerge: 'github:squash-merge',
+  setRepoPath: 'github:set-repo-path',
+  checkoutBranch: 'github:checkout-branch',
+  pickFolder: 'github:pick-folder',
 } as const
 let githubSnapshot: GithubSnapshot = {
   auth: {
@@ -19,10 +27,7 @@ let githubSnapshot: GithubSnapshot = {
   },
   repositories: [],
   pullRequests: [],
-  settings: {
-    refreshIntervalSeconds: 60,
-    soundOnPrUpdates: true,
-  },
+  settings: DEFAULT_GITHUB_SETTINGS,
   sync: {
     isRefreshing: false,
     lastRefreshedAt: null,
@@ -73,6 +78,11 @@ void ipcRenderer.invoke(GITHUB_CHANNELS.snapshot).then((nextSnapshot) => {
 })
 
 const api = {
+  shell: {
+    openExternal: (url: string): void => {
+      ipcRenderer.send('shell:open-external', url)
+    },
+  },
   todos: {
     getSnapshot: () => todosSnapshot,
     subscribe: (listener: (snapshot: Todo[]) => void) => {
@@ -111,6 +121,28 @@ const api = {
       setGithubSnapshotDeferred(nextSnapshot)
       return nextSnapshot
     },
+    listAccounts: () =>
+      ipcRenderer.invoke(GITHUB_CHANNELS.listAccounts) as Promise<GithubAccount[]>,
+    playSound: (soundName: MacOsNotificationSound) =>
+      ipcRenderer.invoke(GITHUB_CHANNELS.playSound, soundName) as Promise<void>,
+    sendTestNotification: (event: PrNotificationEvent) =>
+      ipcRenderer.invoke(GITHUB_CHANNELS.sendTestNotification, event) as Promise<void>,
+    switchAccount: async (login: string) => {
+      const nextSnapshot = (await ipcRenderer.invoke(
+        GITHUB_CHANNELS.switchAccount,
+        login,
+      )) as GithubSnapshot
+      setGithubSnapshotDeferred(nextSnapshot)
+      return nextSnapshot
+    },
+    squashAndMerge: (prUrl: string) =>
+      ipcRenderer.invoke(GITHUB_CHANNELS.squashMerge, prUrl) as Promise<void>,
+    setRepoPath: (nameWithOwner: string, localPath: string) =>
+      ipcRenderer.invoke(GITHUB_CHANNELS.setRepoPath, nameWithOwner, localPath) as Promise<void>,
+    checkoutBranch: (nameWithOwner: string, branch: string) =>
+      ipcRenderer.invoke(GITHUB_CHANNELS.checkoutBranch, nameWithOwner, branch) as Promise<void>,
+    pickFolder: () =>
+      ipcRenderer.invoke(GITHUB_CHANNELS.pickFolder) as Promise<string | null>,
   },
 }
 

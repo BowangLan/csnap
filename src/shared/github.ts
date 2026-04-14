@@ -76,14 +76,63 @@ export interface GithubPullRequestCiStatus {
   workflowName: string | null
 }
 
+export type PrNotificationEvent =
+  | 'allCiFailed'
+  | 'allCiPassed'
+  | 'ciCheckCompleted'
+  | 'newCommit'
+  | 'prApproved'
+  | 'otherChange'
+
+export const MACOS_NOTIFICATION_SOUNDS = [
+  'Basso',
+  'Blow',
+  'Bottle',
+  'Frog',
+  'Funk',
+  'Glass',
+  'Hero',
+  'Morse',
+  'Ping',
+  'Pop',
+  'Purr',
+  'Sosumi',
+  'Submarine',
+  'Tink',
+] as const
+
+export type MacOsNotificationSound = (typeof MACOS_NOTIFICATION_SOUNDS)[number]
+
+export interface EventSoundConfig {
+  enabled: boolean
+  sound: MacOsNotificationSound
+}
+
 export interface GithubSettings {
   refreshIntervalSeconds: number
   soundOnPrUpdates: boolean
+  notificationSound: MacOsNotificationSound
+  eventSounds: {
+    newCommit: EventSoundConfig
+    ciCheckComplete: EventSoundConfig
+    allCiPassed: EventSoundConfig
+    allCiFailed: EventSoundConfig
+    prApproved: EventSoundConfig
+  }
+  nativeNotifications: boolean
+  /** Maps `nameWithOwner` (e.g. "owner/repo") to an absolute local folder path. */
+  localRepoPaths: Record<string, string>
 }
 
 export interface GithubAuthStatus {
   isAuthenticated: boolean
   activeLogin: string | null
+}
+
+export interface GithubAccount {
+  login: string
+  hostname: string
+  isActive: boolean
 }
 
 export interface GithubSyncState {
@@ -101,9 +150,21 @@ export interface GithubSnapshot {
   sync: GithubSyncState
 }
 
+export const DEFAULT_EVENT_SOUNDS: GithubSettings['eventSounds'] = {
+  newCommit: { enabled: true, sound: 'Tink' },
+  ciCheckComplete: { enabled: false, sound: 'Ping' },
+  allCiPassed: { enabled: true, sound: 'Glass' },
+  allCiFailed: { enabled: true, sound: 'Basso' },
+  prApproved: { enabled: true, sound: 'Hero' },
+}
+
 export const DEFAULT_GITHUB_SETTINGS: GithubSettings = {
   refreshIntervalSeconds: 60,
   soundOnPrUpdates: true,
+  notificationSound: 'Glass',
+  eventSounds: DEFAULT_EVENT_SOUNDS,
+  nativeNotifications: true,
+  localRepoPaths: {},
 }
 
 export const EMPTY_GITHUB_SNAPSHOT: GithubSnapshot = {

@@ -1,12 +1,17 @@
-import { app, BrowserWindow, ipcMain, shell } from 'electron'
-import { execFile } from 'node:child_process'
+import { app, BrowserWindow, dialog, ipcMain, Notification, shell } from 'electron'
+import { execFile, spawn } from 'node:child_process'
 import { promisify } from 'node:util'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import {
+  DEFAULT_EVENT_SOUNDS,
   DEFAULT_GITHUB_SETTINGS,
   EMPTY_GITHUB_SNAPSHOT,
+  MACOS_NOTIFICATION_SOUNDS,
+  type EventSoundConfig,
+  type GithubAccount,
   type GithubAuthStatus,
+  type MacOsNotificationSound,
   type GithubPullRequest,
   type GithubPullRequestComment,
   type GithubPullRequestCommit,
@@ -14,15 +19,39 @@ import {
   type GithubRepository,
   type GithubSettings,
   type GithubSnapshot,
+  type PrNotificationEvent,
 } from '../shared/github'
 
 const execFileAsync = promisify(execFile)
+
+interface PrNotificationDetail {
+  pr: GithubPullRequest
+  event: PrNotificationEvent
+}
+
+interface PrChangeBreakdown {
+  hasNewCommit: boolean
+  hasCiCheckCompleted: boolean
+  hasAllCiPassed: boolean
+  hasAllCiFailed: boolean
+  hasPrApproved: boolean
+  hasOtherChange: boolean
+  perPrChanges: PrNotificationDetail[]
+}
 
 const GITHUB_CHANNELS = {
   snapshot: 'github:snapshot',
   changed: 'github:changed',
   refresh: 'github:refresh',
   updateSettings: 'github:update-settings',
+  listAccounts: 'github:list-accounts',
+  switchAccount: 'github:switch-account',
+  playSound: 'github:play-sound',
+  sendTestNotification: 'github:send-test-notification',
+  squashMerge: 'github:squash-merge',
+  setRepoPath: 'github:set-repo-path',
+  checkoutBranch: 'github:checkout-branch',
+  pickFolder: 'github:pick-folder',
 } as const
 
 const SETTINGS_FILE_NAME = 'github-settings.json'
@@ -304,7 +333,13 @@ export class GithubSyncService {
       }
 
       const nextData = await this.fetchGithubData()
-      const prUpdated = this.didPullRequestsChange(this.snapshot.pullRequests, nextData.pullRequests)
+      const changes = this.getPrChanges(this.snapshot.pullRequests, nextData.pullRequests)
+      const hasAnyChange =
+        changes.hasNewCommit ||
+        changes.hasCiCheckCompleted ||
+        changes.hasAllCiPassed ||
+        changes.hasAllCiFailed ||
+        changes.hasOtherChange
 
       this.snapshot = {
         ...this.snapshot,
@@ -315,13 +350,14 @@ export class GithubSyncService {
           ...this.snapshot.sync,
           isRefreshing: false,
           lastRefreshedAt: Date.now(),
-          lastUpdateDetectedAt: prUpdated ? Date.now() : this.snapshot.sync.lastUpdateDetectedAt,
+          lastUpdateDetectedAt: hasAnyChange ? Date.now() : this.snapshot.sync.lastUpdateDetectedAt,
           lastError: null,
         },
       }
 
-      if (prUpdated && this.snapshot.settings.soundOnPrUpdates && this.snapshot.pullRequests.length > 0) {
-        shell.beep()
+      if (this.snapshot.pullRequests.length > 0) {
+        this.playSoundForChanges(changes)
+        this.sendNativeNotifications(changes)
       }
     } catch (error) {
       this.snapshot = {
@@ -338,6 +374,19 @@ export class GithubSyncService {
     }
 
     return this.snapshot
+  }
+
+  playNotificationSound(soundName: MacOsNotificationSound): void {
+    if (process.platform === 'darwin') {
+      const proc = spawn('/usr/bin/afplay', [`/System/Library/Sounds/${soundName}.aiff`], {
+        stdio: 'ignore',
+      })
+      proc.on('error', () => {
+        shell.beep()
+      })
+      return
+    }
+    shell.beep()
   }
 
   async updateSettings(partial: Partial<GithubSettings>): Promise<GithubSnapshot> {
@@ -368,12 +417,40 @@ export class GithubSyncService {
     ipcMain.handle(GITHUB_CHANNELS.updateSettings, (_event, partial: Partial<GithubSettings>) =>
       this.updateSettings(partial),
     )
+    ipcMain.handle(GITHUB_CHANNELS.listAccounts, () => this.listAccounts())
+    ipcMain.handle(GITHUB_CHANNELS.switchAccount, (_event, login: string) =>
+      this.switchAccount(login),
+    )
+    ipcMain.handle(GITHUB_CHANNELS.playSound, (_event, soundName: MacOsNotificationSound) => {
+      this.playNotificationSound(soundName)
+    })
+    ipcMain.handle(GITHUB_CHANNELS.sendTestNotification, (_event, notifEvent: PrNotificationEvent) => {
+      this.sendTestNotification(notifEvent)
+    })
+    ipcMain.handle(GITHUB_CHANNELS.squashMerge, (_event, prUrl: string) =>
+      this.squashAndMerge(prUrl),
+    )
+    ipcMain.handle(GITHUB_CHANNELS.setRepoPath, (_event, nameWithOwner: string, localPath: string) =>
+      this.setRepoPath(nameWithOwner, localPath),
+    )
+    ipcMain.handle(GITHUB_CHANNELS.checkoutBranch, (_event, nameWithOwner: string, branch: string) =>
+      this.checkoutBranch(nameWithOwner, branch),
+    )
+    ipcMain.handle(GITHUB_CHANNELS.pickFolder, () => this.pickFolder())
   }
 
   private unregisterIpcHandlers(): void {
     ipcMain.removeHandler(GITHUB_CHANNELS.snapshot)
     ipcMain.removeHandler(GITHUB_CHANNELS.refresh)
     ipcMain.removeHandler(GITHUB_CHANNELS.updateSettings)
+    ipcMain.removeHandler(GITHUB_CHANNELS.listAccounts)
+    ipcMain.removeHandler(GITHUB_CHANNELS.switchAccount)
+    ipcMain.removeHandler(GITHUB_CHANNELS.playSound)
+    ipcMain.removeHandler(GITHUB_CHANNELS.sendTestNotification)
+    ipcMain.removeHandler(GITHUB_CHANNELS.squashMerge)
+    ipcMain.removeHandler(GITHUB_CHANNELS.setRepoPath)
+    ipcMain.removeHandler(GITHUB_CHANNELS.checkoutBranch)
+    ipcMain.removeHandler(GITHUB_CHANNELS.pickFolder)
   }
 
   private broadcastSnapshot(): void {
@@ -400,6 +477,12 @@ export class GithubSyncService {
       return {
         refreshIntervalSeconds: this.sanitizeRefreshInterval(parsed.refreshIntervalSeconds),
         soundOnPrUpdates: parsed.soundOnPrUpdates ?? DEFAULT_GITHUB_SETTINGS.soundOnPrUpdates,
+        notificationSound: validateSound(parsed.notificationSound) ?? DEFAULT_GITHUB_SETTINGS.notificationSound,
+        eventSounds: parseEventSounds(parsed.eventSounds),
+        nativeNotifications: parsed.nativeNotifications ?? DEFAULT_GITHUB_SETTINGS.nativeNotifications,
+        localRepoPaths: (parsed.localRepoPaths && typeof parsed.localRepoPaths === 'object' && !Array.isArray(parsed.localRepoPaths))
+          ? parsed.localRepoPaths as Record<string, string>
+          : {},
       }
     } catch {
       return DEFAULT_GITHUB_SETTINGS
@@ -505,33 +588,220 @@ export class GithubSyncService {
     return { repositories, pullRequests }
   }
 
-  private didPullRequestsChange(
+  private getPrChanges(
     previousPullRequests: GithubPullRequest[],
     nextPullRequests: GithubPullRequest[],
-  ): boolean {
-    if (previousPullRequests.length === 0) {
-      return false
+  ): PrChangeBreakdown {
+    const result: PrChangeBreakdown = {
+      hasNewCommit: false,
+      hasCiCheckCompleted: false,
+      hasAllCiPassed: false,
+      hasAllCiFailed: false,
+      hasPrApproved: false,
+      hasOtherChange: false,
+      perPrChanges: [],
     }
 
-    const previousById = new Map(previousPullRequests.map((pullRequest) => [pullRequest.id, pullRequest]))
+    if (previousPullRequests.length === 0) {
+      return result
+    }
+
+    const previousById = new Map(previousPullRequests.map((pr) => [pr.id, pr]))
 
     if (previousById.size !== nextPullRequests.length) {
-      return true
+      result.hasOtherChange = true
     }
 
-    return nextPullRequests.some((pullRequest) => {
-      const previous = previousById.get(pullRequest.id)
-      if (!previous) {
-        return true
+    for (const next of nextPullRequests) {
+      const prev = previousById.get(next.id)
+      if (!prev) {
+        result.hasOtherChange = true
+        continue
       }
 
-      return (
-        previous.updatedAt !== pullRequest.updatedAt ||
-        previous.reviewDecision !== pullRequest.reviewDecision ||
-        previous.state !== pullRequest.state ||
-        previous.isDraft !== pullRequest.isDraft
-      )
+      // New commit: head commit oid changed
+      const prHasNewCommit = prev.commits[0]?.oid !== next.commits[0]?.oid
+      if (prHasNewCommit) result.hasNewCommit = true
+
+      // CI rollup state transitions
+      const prevRollup = prev.ciRollupState?.toUpperCase() ?? null
+      const nextRollup = next.ciRollupState?.toUpperCase() ?? null
+      let prHasAllCiPassed = false
+      let prHasAllCiFailed = false
+      if (nextRollup !== prevRollup) {
+        if (nextRollup === 'SUCCESS' && prevRollup !== 'SUCCESS') {
+          result.hasAllCiPassed = true
+          prHasAllCiPassed = true
+        } else if (
+          (nextRollup === 'FAILURE' || nextRollup === 'ERROR') &&
+          prevRollup !== 'FAILURE' &&
+          prevRollup !== 'ERROR'
+        ) {
+          result.hasAllCiFailed = true
+          prHasAllCiFailed = true
+        }
+      }
+
+      // Individual CI check completed: was pending, now done
+      let prHasCiCheckCompleted = false
+      const prevCiByName = new Map(prev.ciStatuses.map((s) => [s.name, s]))
+      for (const status of next.ciStatuses) {
+        const prevStatus = prevCiByName.get(status.name)
+        if (prevStatus && isCiPending(prevStatus) && !isCiPending(status)) {
+          prHasCiCheckCompleted = true
+          result.hasCiCheckCompleted = true
+          break
+        }
+      }
+
+      // PR approved: reviewDecision transitioned to APPROVED
+      const prHasPrApproved =
+        prev.reviewDecision !== 'APPROVED' && next.reviewDecision === 'APPROVED'
+      if (prHasPrApproved) result.hasPrApproved = true
+
+      // Other changes (review non-approval, state, draft)
+      const prHasOtherChange =
+        (prev.reviewDecision !== next.reviewDecision && !prHasPrApproved) ||
+        prev.state !== next.state ||
+        prev.isDraft !== next.isDraft
+      if (prHasOtherChange) result.hasOtherChange = true
+
+      // Collect per-PR detail at highest priority for native notifications
+      let event: PrNotificationEvent | null = null
+      if (prHasAllCiFailed) event = 'allCiFailed'
+      else if (prHasAllCiPassed) event = 'allCiPassed'
+      else if (prHasCiCheckCompleted) event = 'ciCheckCompleted'
+      else if (prHasNewCommit) event = 'newCommit'
+      else if (prHasPrApproved) event = 'prApproved'
+      else if (prHasOtherChange) event = 'otherChange'
+
+      if (event !== null) {
+        result.perPrChanges.push({ pr: next, event })
+      }
+    }
+
+    return result
+  }
+
+  private sendTestNotification(event: PrNotificationEvent): void {
+    console.log('[sendTestNotification] called with event:', event)
+    console.log('[sendTestNotification] Notification.isSupported():', Notification.isSupported())
+    if (!Notification.isSupported()) return
+    const fakePr = {
+      title: 'Example pull request',
+      number: 42,
+      repositoryNameWithOwner: 'owner/repo',
+      url: 'https://github.com',
+    } as GithubPullRequest
+    const { title, body } = buildNativeNotificationContent(fakePr, event)
+    console.log('[sendTestNotification] showing notification:', { title, body })
+    try {
+      new Notification({ title, body, silent: true }).show()
+      console.log('[sendTestNotification] notification shown')
+    } catch (err) {
+      console.error('[sendTestNotification] error:', err)
+    }
+  }
+
+  private sendNativeNotifications(changes: PrChangeBreakdown): void {
+    if (!this.snapshot.settings.nativeNotifications) return
+    if (!Notification.isSupported()) return
+
+    for (const { pr, event } of changes.perPrChanges) {
+      const { title, body } = buildNativeNotificationContent(pr, event)
+      const notif = new Notification({ title, body, silent: true })
+      notif.on('click', () => {
+        void shell.openExternal(pr.url)
+      })
+      notif.show()
+    }
+  }
+
+  private playSoundForChanges(changes: PrChangeBreakdown): void {
+    const { eventSounds, soundOnPrUpdates, notificationSound } = this.snapshot.settings
+
+    // Priority: allCiFailed > allCiPassed > ciCheckComplete > newCommit > prApproved > generic
+    if (changes.hasAllCiFailed && eventSounds.allCiFailed.enabled) {
+      this.playNotificationSound(eventSounds.allCiFailed.sound)
+    } else if (changes.hasAllCiPassed && eventSounds.allCiPassed.enabled) {
+      this.playNotificationSound(eventSounds.allCiPassed.sound)
+    } else if (changes.hasCiCheckCompleted && eventSounds.ciCheckComplete.enabled) {
+      this.playNotificationSound(eventSounds.ciCheckComplete.sound)
+    } else if (changes.hasNewCommit && eventSounds.newCommit.enabled) {
+      this.playNotificationSound(eventSounds.newCommit.sound)
+    } else if (changes.hasPrApproved && eventSounds.prApproved.enabled) {
+      this.playNotificationSound(eventSounds.prApproved.sound)
+    } else if (changes.hasOtherChange && soundOnPrUpdates) {
+      this.playNotificationSound(notificationSound)
+    }
+  }
+
+  private async listAccounts(): Promise<GithubAccount[]> {
+    try {
+      // gh auth status writes to stderr on some versions; capture both
+      const result = await execFileAsync('gh', ['auth', 'status'], {
+        cwd: app.getPath('home'),
+        env: process.env,
+      }).catch((err: NodeJS.ErrnoException & { stdout?: string; stderr?: string }) => ({
+        stdout: err.stdout ?? '',
+        stderr: err.stderr ?? '',
+      }))
+      const output = (result.stdout ?? '') + (result.stderr ?? '')
+      return parseGhAuthStatus(output)
+    } catch {
+      return []
+    }
+  }
+
+  private async switchAccount(login: string): Promise<GithubSnapshot> {
+    await execFileAsync('gh', ['auth', 'switch', '--user', login], {
+      cwd: app.getPath('home'),
+      env: process.env,
     })
+    return this.refresh()
+  }
+
+  async squashAndMerge(prUrl: string): Promise<void> {
+    await execFileAsync('gh', ['pr', 'merge', prUrl, '--squash', '--delete-branch'], {
+      cwd: app.getPath('home'),
+      env: process.env,
+    })
+    // Refresh after merge so the PR disappears from the list
+    void this.refresh()
+  }
+
+  private async setRepoPath(nameWithOwner: string, localPath: string): Promise<void> {
+    const next: GithubSettings = {
+      ...this.snapshot.settings,
+      localRepoPaths: {
+        ...this.snapshot.settings.localRepoPaths,
+        [nameWithOwner]: localPath,
+      },
+    }
+    if (!localPath) {
+      const paths = { ...next.localRepoPaths }
+      delete paths[nameWithOwner]
+      next.localRepoPaths = paths
+    }
+    this.snapshot = { ...this.snapshot, settings: next }
+    await this.persistSettings(next)
+    this.broadcastSnapshot()
+  }
+
+  private async checkoutBranch(nameWithOwner: string, branch: string): Promise<void> {
+    const localPath = this.snapshot.settings.localRepoPaths[nameWithOwner]
+    if (!localPath) {
+      throw new Error()
+    }
+    await execFileAsync('git', ['checkout', branch], {
+      cwd: localPath,
+      env: process.env,
+    })
+  }
+
+  private async pickFolder(): Promise<string | null> {
+    const result = await dialog.showOpenDialog({ properties: ['openDirectory'] })
+    return result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0]
   }
 
   private async runGhJson<T>(args: string[]): Promise<T> {
@@ -610,4 +880,108 @@ function mapPullRequestCommits(
     }
   })
   return mapped.sort((a, b) => b.authoredAt - a.authoredAt)
+}
+
+function isCiPending(status: GithubPullRequestCiStatus): boolean {
+  const value = (status.conclusion ?? status.status).toUpperCase()
+  return ['QUEUED', 'IN_PROGRESS', 'PENDING', 'EXPECTED', 'WAITING', 'REQUESTED'].includes(value)
+}
+
+function validateSound(sound: string | undefined | null): MacOsNotificationSound | null {
+  return sound && (MACOS_NOTIFICATION_SOUNDS as readonly string[]).includes(sound)
+    ? (sound as MacOsNotificationSound)
+    : null
+}
+
+function parseEventSoundConfig(
+  raw: unknown,
+  defaults: { enabled: boolean; sound: MacOsNotificationSound },
+): EventSoundConfig {
+  if (!raw || typeof raw !== 'object') return defaults
+  const obj = raw as Partial<EventSoundConfig>
+  return {
+    enabled: typeof obj.enabled === 'boolean' ? obj.enabled : defaults.enabled,
+    sound: validateSound(obj.sound) ?? defaults.sound,
+  }
+}
+
+function parseEventSounds(raw: unknown): GithubSettings['eventSounds'] {
+  const d = DEFAULT_EVENT_SOUNDS
+  if (!raw || typeof raw !== 'object') return d
+  const obj = raw as Partial<GithubSettings['eventSounds']>
+  return {
+    newCommit: parseEventSoundConfig(obj.newCommit, d.newCommit),
+    ciCheckComplete: parseEventSoundConfig(obj.ciCheckComplete, d.ciCheckComplete),
+    allCiPassed: parseEventSoundConfig(obj.allCiPassed, d.allCiPassed),
+    allCiFailed: parseEventSoundConfig(obj.allCiFailed, d.allCiFailed),
+    prApproved: parseEventSoundConfig(obj.prApproved, d.prApproved),
+  }
+}
+
+function buildNativeNotificationContent(
+  pr: GithubPullRequest,
+  event: PrNotificationEvent,
+): { title: string; body: string } {
+  const location = `${pr.repositoryNameWithOwner} #${pr.number}`
+  switch (event) {
+    case 'allCiFailed':
+      return { title: 'CI Failed', body: `${pr.title}\n${location}` }
+    case 'allCiPassed':
+      return { title: 'CI Passed', body: `${pr.title}\n${location}` }
+    case 'ciCheckCompleted':
+      return { title: 'CI Check Completed', body: `${pr.title}\n${location}` }
+    case 'newCommit':
+      return { title: 'New Commit Pushed', body: `${pr.title}\n${location}` }
+    case 'prApproved':
+      return { title: 'PR Approved', body: `${pr.title}\n${location}` }
+    case 'otherChange':
+      return { title: 'Pull Request Updated', body: `${pr.title}\n${location}` }
+  }
+}
+
+/**
+ * Parse `gh auth status` text output into a list of accounts.
+ *
+ * Example output:
+ *   github.com
+ *     ✓ Logged in to github.com account alice (keyring)
+ *     - Active account: true
+ *     ✓ Logged in to github.com account bob (keyring)
+ *     - Active account: false
+ */
+function parseGhAuthStatus(output: string): GithubAccount[] {
+  const accounts: GithubAccount[] = []
+  const lines = output.split('\n')
+  let currentHostname = ''
+  let pendingLogin: string | null = null
+
+  for (const line of lines) {
+    const trimmed = line.trim()
+
+    // Hostname line — no leading whitespace, not a status line
+    if (!line.startsWith(' ') && !line.startsWith('\t') && trimmed && !trimmed.startsWith('✓') && !trimmed.startsWith('-') && !trimmed.startsWith('!')) {
+      currentHostname = trimmed
+      continue
+    }
+
+    // Account login: "✓ Logged in to github.com account USERNAME (...)"
+    const loginMatch = trimmed.match(/^✓ Logged in to \S+ account (\S+)/)
+    if (loginMatch) {
+      pendingLogin = loginMatch[1]
+      continue
+    }
+
+    // Active flag: "- Active account: true/false"
+    const activeMatch = trimmed.match(/^- Active account: (true|false)/)
+    if (activeMatch && pendingLogin) {
+      accounts.push({
+        login: pendingLogin,
+        hostname: currentHostname,
+        isActive: activeMatch[1] === 'true',
+      })
+      pendingLogin = null
+    }
+  }
+
+  return accounts
 }

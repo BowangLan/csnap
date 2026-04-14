@@ -9,6 +9,7 @@ import {
   ExternalLink,
   GitBranch,
   GitCommit,
+  GitMerge,
   MessageSquare,
   Loader2,
   MoreHorizontal,
@@ -18,19 +19,110 @@ import {
   MinusCircle,
 } from 'lucide-react'
 import * as React from 'react'
+import { useNavigate } from '@tanstack/react-router'
+import { toast } from 'sonner'
 import { Avatar, AvatarFallback, AvatarImage } from '@renderer/components/ui/avatar'
 import { Badge } from '@renderer/components/ui/badge'
 import { Button } from '@renderer/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@renderer/components/ui/collapsible'
 import { Separator } from '@renderer/components/ui/separator'
-import { Switch } from '@renderer/components/ui/switch'
 import { cn } from '@renderer/lib/utils'
 import { normalizeCiState } from '@renderer/lib/pr-ci'
 import { reviewerStatusLabel } from '@renderer/lib/pr-reviewers'
 import type { GithubPullRequest } from '../../../../shared/github'
+import { Markdown } from '@renderer/components/Markdown'
 
 function initials(login: string): string {
   return login.slice(0, 2).toUpperCase()
+}
+
+type MergeConfirmState = 'idle' | 'confirm' | 'merging'
+
+function SquashMergeButton({ pr }: { pr: GithubPullRequest }) {
+  const navigate = useNavigate()
+  const [state, setState] = React.useState<MergeConfirmState>('idle')
+
+  // Reset to idle if user clicks away (blur on the confirm button)
+  const confirmTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const clearConfirmTimeout = () => {
+    if (confirmTimeoutRef.current) {
+      clearTimeout(confirmTimeoutRef.current)
+      confirmTimeoutRef.current = null
+    }
+  }
+
+  React.useEffect(() => {
+    return () => clearConfirmTimeout()
+  }, [])
+
+  const handleFirstClick = () => {
+    setState('confirm')
+    // Auto-reset after 4 s if user does nothing
+    clearConfirmTimeout()
+    confirmTimeoutRef.current = setTimeout(() => {
+      setState('idle')
+    }, 4000)
+  }
+
+  const handleConfirm = async () => {
+    clearConfirmTimeout()
+    setState('merging')
+    try {
+      await window.api.github.squashAndMerge(pr.url)
+      toast.success('PR merged', {
+        description: `#${pr.number} squash-merged and branch deleted.`,
+      })
+      // Navigate back to the PR list; the refresh triggered by squashAndMerge
+      // will remove this PR from the snapshot automatically.
+      void navigate({ to: '/prs' })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      toast.error('Merge failed', { description: message })
+      setState('idle')
+    }
+  }
+
+  const handleCancel = () => {
+    clearConfirmTimeout()
+    setState('idle')
+  }
+
+  if (state === 'merging') {
+    return (
+      <Button variant="default" size="sm" disabled className="gap-1.5">
+        <Loader2 className="size-3.5 animate-spin" />
+        Merging…
+      </Button>
+    )
+  }
+
+  if (state === 'confirm') {
+    return (
+      <div className="flex items-center gap-1.5">
+        <Button
+          variant="destructive"
+          size="sm"
+          onClick={() => void handleConfirm()}
+          className="gap-1.5"
+          autoFocus
+        >
+          <GitMerge className="size-3.5" />
+          Confirm merge
+        </Button>
+        <Button variant="ghost" size="sm" onClick={handleCancel}>
+          Cancel
+        </Button>
+      </div>
+    )
+  }
+
+  return (
+    <Button variant="default" size="sm" onClick={handleFirstClick} className="gap-1.5">
+      <GitMerge className="size-3.5" />
+      Squash &amp; Merge
+    </Button>
+  )
 }
 
 function ciRollupSummary(pr: GithubPullRequest): { pending: number; failing: number; passing: number; total: number } {
@@ -50,8 +142,7 @@ function ciRollupSummary(pr: GithubPullRequest): { pending: number; failing: num
 export function PullRequestDetailView({ pullRequest: pr }: { pullRequest: GithubPullRequest }) {
   const [checksOpen, setChecksOpen] = React.useState(true)
   const [reviewersOpen, setReviewersOpen] = React.useState(true)
-  const [mergeWhenReady, setMergeWhenReady] = React.useState(false)
-  const [reviewBannerVisible, setReviewBannerVisible] = React.useState(true)
+const [reviewBannerVisible, setReviewBannerVisible] = React.useState(true)
 
   const rollup = ciRollupSummary(pr)
   const waitingOnCi = rollup.pending > 0
@@ -69,6 +160,7 @@ export function PullRequestDetailView({ pullRequest: pr }: { pullRequest: Github
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <h1 className="min-w-0 text-balance text-xl md:text-3xl font-medium tracking-tight sm:text-2xl">{pr.title}</h1>
           <div className="flex shrink-0 flex-wrap items-center gap-2">
+            <SquashMergeButton pr={pr} />
             <Button variant="outline" size="sm" asChild>
               <a href={pr.url} target="_blank" rel="noreferrer">
                 Review changes
@@ -215,9 +307,9 @@ export function PullRequestDetailView({ pullRequest: pr }: { pullRequest: Github
                             <ExternalLink className="size-3 shrink-0 text-muted-foreground opacity-60" />
                           </a>
                           {item.body.trim() ? (
-                            <pre className="mt-1.5 max-h-32 overflow-y-auto whitespace-pre-wrap wrap-break-word font-sans text-xs leading-relaxed text-muted-foreground">
-                              {item.body}
-                            </pre>
+                            <div className="mt-1.5 max-h-40 overflow-y-auto">
+                              <Markdown className="text-xs text-muted-foreground">{item.body}</Markdown>
+                            </div>
                           ) : null}
                         </div>
                       </div>
@@ -245,11 +337,7 @@ export function PullRequestDetailView({ pullRequest: pr }: { pullRequest: Github
                   </Button>
                 </div>
                 {pr.body?.trim() ? (
-                  <div className="prose prose-sm dark:prose-invert mt-4 max-w-none">
-                    <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-muted-foreground">
-                      {pr.body}
-                    </pre>
-                  </div>
+                  <Markdown className="mt-4">{pr.body}</Markdown>
                 ) : (
                   <p className="mt-4 text-sm italic text-muted-foreground">No description provided.</p>
                 )}
@@ -267,10 +355,6 @@ export function PullRequestDetailView({ pullRequest: pr }: { pullRequest: Github
               >
                 {pr.state === 'OPEN' ? 'Open' : pr.state}
               </Badge>
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <span className="hidden sm:inline">Merge when ready</span>
-                <Switch checked={mergeWhenReady} onCheckedChange={setMergeWhenReady} aria-label="Merge when ready" />
-              </div>
             </div>
             <Separator className="my-4" />
             <div className="space-y-3">

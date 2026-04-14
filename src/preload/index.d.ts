@@ -1,11 +1,14 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
-import type { GithubSettings, GithubSnapshot } from '../shared/github'
+import type { GithubAccount, GithubSettings, GithubSnapshot, MacOsNotificationSound, PrNotificationEvent } from '../shared/github'
 import type { Todo } from '../shared/todo'
 
 declare global {
   interface Window {
     electron: ElectronAPI
     api: {
+      shell: {
+        openExternal: (url: string) => void
+      }
       todos: {
         getSnapshot: () => Todo[]
         subscribe: (listener: (snapshot: Todo[]) => void) => () => void
@@ -19,6 +22,14 @@ declare global {
         subscribe: (listener: (snapshot: GithubSnapshot) => void) => () => void
         refresh: () => Promise<GithubSnapshot>
         updateSettings: (partial: Partial<GithubSettings>) => Promise<GithubSnapshot>
+        listAccounts: () => Promise<GithubAccount[]>
+        playSound: (soundName: MacOsNotificationSound) => Promise<void>
+        sendTestNotification: (event: PrNotificationEvent) => Promise<void>
+        switchAccount: (login: string) => Promise<GithubSnapshot>
+        squashAndMerge: (prUrl: string) => Promise<void>
+        setRepoPath: (nameWithOwner: string, localPath: string) => Promise<void>
+        checkoutBranch: (nameWithOwner: string, branch: string) => Promise<void>
+        pickFolder: () => Promise<string | null>
       }
     }
   }
