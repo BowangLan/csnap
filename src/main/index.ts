@@ -3,6 +3,7 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { GithubSyncService } from './github-sync-service'
+import { GithubStoreService } from './livestore/github-store'
 import { TodoStoreService } from './livestore/todo-store'
 import { RepoStatusStore } from './livestore/repo-status-store'
 import { AppLifecycleService } from './app-lifecycle'
@@ -12,7 +13,8 @@ const WINDOW_HEIGHT = 800
 const NAVBAR_HEIGHT = 56
 
 const todoStore = new TodoStoreService()
-const githubSyncService = new GithubSyncService()
+const githubStore = new GithubStoreService()
+const githubSyncService = new GithubSyncService(githubStore)
 const repoStatusStore = new RepoStatusStore()
 const lifecycle = new AppLifecycleService(githubSyncService, repoStatusStore)
 
@@ -72,9 +74,11 @@ app.whenReady().then(async () => {
     void shell.openExternal(url)
   })
 
-  // Initialise all services.  GithubSyncService.init() already runs an initial
-  // full refresh; RepoStatusStore.init() seeds from persisted SQLite state.
+  // Initialise all services in dependency order:
+  //   1. githubStore must be ready before githubSyncService.init() reads settings
+  //   2. githubSyncService.init() performs the first full GitHub API refresh
   await todoStore.init()
+  await githubStore.init()
   await githubSyncService.init()
   await repoStatusStore.init()
   lifecycle.registerIpcHandlers()
@@ -97,6 +101,7 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   void githubSyncService.shutdown()
+  void githubStore.shutdown()
   void todoStore.shutdown()
   void repoStatusStore.shutdown()
   lifecycle.unregisterIpcHandlers()

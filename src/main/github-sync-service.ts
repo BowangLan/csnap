@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Notification, shell } from 'electron'
+import { app, dialog, ipcMain, Notification, shell } from 'electron'
 import { execFile, spawn } from 'node:child_process'
 import { promisify } from 'node:util'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
@@ -6,7 +6,6 @@ import { dirname, join } from 'node:path'
 import {
   DEFAULT_EVENT_SOUNDS,
   DEFAULT_GITHUB_SETTINGS,
-  EMPTY_GITHUB_SNAPSHOT,
   MACOS_NOTIFICATION_SOUNDS,
   type EventSoundConfig,
   type GithubAccount,
@@ -21,6 +20,7 @@ import {
   type GithubSnapshot,
   type PrNotificationEvent,
 } from '../shared/github'
+import type { GithubStoreService } from './livestore/github-store'
 
 const execFileAsync = promisify(execFile)
 
@@ -353,18 +353,21 @@ interface PrPollFingerprint {
 }
 
 export class GithubSyncService {
-  private snapshot: GithubSnapshot = EMPTY_GITHUB_SNAPSHOT
   private pollTimer: NodeJS.Timeout | null = null
   private settingsPath = ''
   private isRefreshing = false
   private lastPollFingerprints: PrPollFingerprint[] = []
 
+  constructor(private readonly githubStore: GithubStoreService) {}
+
   async init(): Promise<void> {
     this.settingsPath = join(app.getPath('userData'), SETTINGS_FILE_NAME)
-    const settings = await this.loadSettings()
-    this.snapshot = {
-      ...EMPTY_GITHUB_SNAPSHOT,
-      settings,
+
+    // Seed settings: use the LiveStore value if it exists, otherwise migrate
+    // from the legacy JSON file and commit to the store.
+    if (!this.githubStore.hasStoredSettings()) {
+      const settings = await this.loadSettingsFromJsonFile()
+      this.githubStore.commitSettings(settings)
     }
 
     this.registerIpcHandlers()
@@ -381,50 +384,46 @@ export class GithubSyncService {
   }
 
   getSnapshot(): GithubSnapshot {
-    return this.snapshot
+    return this.githubStore.getSnapshot()
   }
 
   getLocalRepoPaths(): Record<string, string> {
-    return this.snapshot.settings.localRepoPaths
+    return this.githubStore.getSnapshot().settings.localRepoPaths
+  }
+
+  private get settings(): GithubSettings {
+    return this.githubStore.getSnapshot().settings
   }
 
   async refresh(): Promise<GithubSnapshot> {
     if (this.isRefreshing) {
-      return this.snapshot
+      return this.githubStore.getSnapshot()
     }
 
     this.isRefreshing = true
-    this.snapshot = {
-      ...this.snapshot,
-      sync: {
-        ...this.snapshot.sync,
-        isRefreshing: true,
-        lastError: null,
-      },
-    }
-    this.broadcastSnapshot()
+
+    // Mark as refreshing immediately so the UI shows a loading state.
+    this.githubStore.commitSyncStarted()
 
     try {
       const auth = await this.fetchAuth()
 
       if (!auth.isAuthenticated) {
-        this.snapshot = {
-          ...this.snapshot,
+        this.githubStore.commitSyncFailed({
+          error: 'GitHub CLI is not authenticated. Run `gh auth login` first.',
           auth,
-          repositories: [],
-          pullRequests: [],
-          sync: {
-            ...this.snapshot.sync,
-            isRefreshing: false,
-            lastError: 'GitHub CLI is not authenticated. Run `gh auth login` first.',
-          },
-        }
-        return this.snapshot
+        })
+        return this.githubStore.getSnapshot()
       }
+
+      // Capture previous PRs BEFORE committing new data so we can diff them
+      // for notification/sound logic.
+      const previousPullRequests = this.githubStore.getSnapshot().pullRequests
+      const previousSyncState = this.githubStore.getSnapshot().sync
 
       const nextData = await this.fetchGithubData()
       this.logRateLimit('full-fetch', nextData.rateLimit)
-      const changes = this.getPrChanges(this.snapshot.pullRequests, nextData.pullRequests)
+      const changes = this.getPrChanges(previousPullRequests, nextData.pullRequests)
       const hasAnyChange =
         changes.hasNewCommit ||
         changes.hasCiCheckCompleted ||
@@ -432,41 +431,30 @@ export class GithubSyncService {
         changes.hasAllCiFailed ||
         changes.hasOtherChange
 
-      this.snapshot = {
-        ...this.snapshot,
-        auth,
-        repositories: nextData.repositories,
+      this.githubStore.commitSync({
         pullRequests: nextData.pullRequests,
-        sync: {
-          ...this.snapshot.sync,
-          isRefreshing: false,
-          lastRefreshedAt: Date.now(),
-          lastUpdateDetectedAt: hasAnyChange ? Date.now() : this.snapshot.sync.lastUpdateDetectedAt,
-          lastError: null,
-        },
-      }
+        repositories: nextData.repositories,
+        auth,
+        lastRefreshedAt: Date.now(),
+        lastUpdateDetectedAt: hasAnyChange ? Date.now() : previousSyncState.lastUpdateDetectedAt,
+      })
 
       this.lastPollFingerprints = this.buildFingerprints(nextData.pullRequests)
 
-      if (this.snapshot.pullRequests.length > 0) {
+      if (nextData.pullRequests.length > 0) {
         this.playSoundForChanges(changes)
         this.sendNativeNotifications(changes)
       }
     } catch (error) {
-      this.snapshot = {
-        ...this.snapshot,
-        sync: {
-          ...this.snapshot.sync,
-          isRefreshing: false,
-          lastError: error instanceof Error ? error.message : 'Failed to refresh GitHub data.',
-        },
-      }
+      this.githubStore.commitSyncFailed({
+        error: error instanceof Error ? error.message : 'Failed to refresh GitHub data.',
+        auth: { isAuthenticated: true, activeLogin: this.githubStore.getSnapshot().auth.activeLogin },
+      })
     } finally {
       this.isRefreshing = false
-      this.broadcastSnapshot()
     }
 
-    return this.snapshot
+    return this.githubStore.getSnapshot()
   }
 
   playNotificationSound(soundName: MacOsNotificationSound): void {
@@ -484,28 +472,24 @@ export class GithubSyncService {
 
   async updateSettings(partial: Partial<GithubSettings>): Promise<GithubSnapshot> {
     const nextSettings: GithubSettings = {
-      ...this.snapshot.settings,
+      ...this.settings,
       ...partial,
       refreshIntervalSeconds: this.sanitizeRefreshInterval(
-        partial.refreshIntervalSeconds ?? this.snapshot.settings.refreshIntervalSeconds,
+        partial.refreshIntervalSeconds ?? this.settings.refreshIntervalSeconds,
       ),
     }
 
-    this.snapshot = {
-      ...this.snapshot,
-      settings: nextSettings,
-    }
-
+    this.githubStore.commitSettings(nextSettings)
+    // Also persist to JSON for backward compatibility with older app versions.
     await this.persistSettings(nextSettings)
     this.schedulePoll()
-    this.broadcastSnapshot()
 
-    return this.snapshot
+    return this.githubStore.getSnapshot()
   }
 
   private registerIpcHandlers(): void {
     this.unregisterIpcHandlers()
-    ipcMain.handle(GITHUB_CHANNELS.snapshot, () => this.getSnapshot())
+    // Note: GITHUB_CHANNELS.snapshot is handled by GithubStoreService.
     ipcMain.handle(GITHUB_CHANNELS.refresh, () => this.refresh())
     ipcMain.handle(GITHUB_CHANNELS.updateSettings, (_event, partial: Partial<GithubSettings>) =>
       this.updateSettings(partial),
@@ -533,7 +517,7 @@ export class GithubSyncService {
   }
 
   private unregisterIpcHandlers(): void {
-    ipcMain.removeHandler(GITHUB_CHANNELS.snapshot)
+    // Note: GITHUB_CHANNELS.snapshot is unregistered by GithubStoreService.
     ipcMain.removeHandler(GITHUB_CHANNELS.refresh)
     ipcMain.removeHandler(GITHUB_CHANNELS.updateSettings)
     ipcMain.removeHandler(GITHUB_CHANNELS.listAccounts)
@@ -546,12 +530,6 @@ export class GithubSyncService {
     ipcMain.removeHandler(GITHUB_CHANNELS.pickFolder)
   }
 
-  private broadcastSnapshot(): void {
-    for (const window of BrowserWindow.getAllWindows()) {
-      window.webContents.send(GITHUB_CHANNELS.changed, this.snapshot)
-    }
-  }
-
   private schedulePoll(): void {
     if (this.pollTimer) {
       clearInterval(this.pollTimer)
@@ -559,7 +537,7 @@ export class GithubSyncService {
     }
 
     const intervalSeconds = Math.min(
-      this.snapshot.settings.refreshIntervalSeconds,
+      this.settings.refreshIntervalSeconds,
       POLL_INTERVAL_SECONDS,
     )
     this.pollTimer = setInterval(() => {
@@ -590,7 +568,11 @@ export class GithubSyncService {
     }
   }
 
-  private async loadSettings(): Promise<GithubSettings> {
+  /**
+   * Legacy: read settings from the JSON file on disk.
+   * Used only on first startup after migration to LiveStore.
+   */
+  private async loadSettingsFromJsonFile(): Promise<GithubSettings> {
     try {
       const raw = await readFile(this.settingsPath, 'utf8')
       const parsed = JSON.parse(raw) as Partial<GithubSettings>
@@ -900,7 +882,7 @@ export class GithubSyncService {
   }
 
   private sendNativeNotifications(changes: PrChangeBreakdown): void {
-    if (!this.snapshot.settings.nativeNotifications) return
+    if (!this.settings.nativeNotifications) return
     if (!Notification.isSupported()) return
 
     for (const { pr, event } of changes.perPrChanges) {
@@ -914,7 +896,7 @@ export class GithubSyncService {
   }
 
   private playSoundForChanges(changes: PrChangeBreakdown): void {
-    const { eventSounds, soundOnPrUpdates, notificationSound } = this.snapshot.settings
+    const { eventSounds, soundOnPrUpdates, notificationSound } = this.settings
 
     // Priority: allCiFailed > allCiPassed > ciCheckComplete > newCommit > prApproved > generic
     if (changes.hasAllCiFailed && eventSounds.allCiFailed.enabled) {
@@ -954,7 +936,8 @@ export class GithubSyncService {
       cwd: app.getPath('home'),
       env: process.env,
     })
-    return this.refresh()
+    await this.refresh()
+    return this.githubStore.getSnapshot()
   }
 
   async squashAndMerge(prUrl: string): Promise<void> {
@@ -975,20 +958,19 @@ export class GithubSyncService {
   }
 
   private async setRepoPath(nameWithOwner: string, localPath: string): Promise<void> {
-    const paths = { ...this.snapshot.settings.localRepoPaths }
+    const paths = { ...this.settings.localRepoPaths }
     if (localPath) {
       paths[nameWithOwner] = localPath
     } else {
       delete paths[nameWithOwner]
     }
-    const next: GithubSettings = { ...this.snapshot.settings, localRepoPaths: paths }
-    this.snapshot = { ...this.snapshot, settings: next }
+    const next: GithubSettings = { ...this.settings, localRepoPaths: paths }
+    this.githubStore.commitSettings(next)
     await this.persistSettings(next)
-    this.broadcastSnapshot()
   }
 
   private async checkoutBranch(nameWithOwner: string, branch: string): Promise<void> {
-    const localPath = this.snapshot.settings.localRepoPaths[nameWithOwner]
+    const localPath = this.settings.localRepoPaths[nameWithOwner]
     if (!localPath) {
       throw new Error(`No local path configured for ${nameWithOwner}. Set one in Settings > Local Repositories.`)
     }

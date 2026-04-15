@@ -1,7 +1,5 @@
 import { Events, Schema, State, makeSchema } from '@livestore/livestore'
 
-// ─── Todo schema ────────────────────────────────────────────────────────────
-
 export const tables = {
   todos: State.SQLite.table({
     name: 'todos',
@@ -50,4 +48,3 @@ const materializers = State.SQLite.materializers(events, {
 const state = State.SQLite.makeState({ tables, materializers })
 
 export const todoSchema = makeSchema({ events, state })
-
