@@ -1,20 +1,13 @@
-import { startTransition, useEffect, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { repoStatusesQueryKey } from '@renderer/lib/query-keys'
 import type { LocalRepoGitStatus } from '../../../shared/github'
 
 export function useRepoStatuses(): Record<string, LocalRepoGitStatus> {
-  const [snapshot, setSnapshot] = useState<Record<string, LocalRepoGitStatus>>(() =>
-    window.api.repoStatuses.getSnapshot(),
-  )
+  const query = useQuery({
+    queryKey: repoStatusesQueryKey,
+    queryFn: () => window.api.repoStatuses.getSnapshot(),
+    initialData: {},
+  })
 
-  useEffect(() => {
-    const unsubscribe = window.api.repoStatuses.subscribe((next) => {
-      startTransition(() => {
-        setSnapshot(next)
-      })
-    })
-
-    return unsubscribe
-  }, [])
-
-  return snapshot
+  return query.data
 }

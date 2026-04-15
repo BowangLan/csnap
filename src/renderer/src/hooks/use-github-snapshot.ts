@@ -1,18 +1,13 @@
-import { startTransition, useEffect, useState } from 'react'
-import type { GithubSnapshot } from '../../../shared/github'
+import { useQuery } from '@tanstack/react-query'
+import { githubSnapshotQueryKey } from '@renderer/lib/query-keys'
+import { EMPTY_GITHUB_SNAPSHOT, type GithubSnapshot } from '../../../shared/github'
 
 export function useGithubSnapshot(): GithubSnapshot {
-  const [snapshot, setSnapshot] = useState<GithubSnapshot>(() => window.api.github.getSnapshot())
+  const query = useQuery({
+    queryKey: githubSnapshotQueryKey,
+    queryFn: () => window.api.github.getSnapshot(),
+    initialData: EMPTY_GITHUB_SNAPSHOT,
+  })
 
-  useEffect(() => {
-    const unsubscribe = window.api.github.subscribe((nextSnapshot) => {
-      startTransition(() => {
-        setSnapshot(nextSnapshot)
-      })
-    })
-
-    return unsubscribe
-  }, [])
-
-  return snapshot
+  return query.data
 }

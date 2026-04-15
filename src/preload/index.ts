@@ -1,23 +1,13 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import { TODO_CHANNELS, REPO_STATUS_CHANNELS } from '../shared/livestore/channels'
+import { TODO_CHANNELS, REPO_STATUS_CHANNELS } from '../shared/ipc/channels'
 import {
-  DEFAULT_GITHUB_SETTINGS,
   type BugStatus,
   type GithubAccount,
   type GithubSettings,
-  type GithubSnapshot,
-  type LocalRepoGitStatus,
   type MacOsNotificationSound,
   type PrNotificationEvent,
 } from '../shared/github'
-import type { Todo } from '../shared/todo'
-
-let todosSnapshot: Todo[] = []
-const todoListeners = new Set<(snapshot: Todo[]) => void>()
-
-let repoStatusSnapshot: Record<string, LocalRepoGitStatus> = {}
-const repoStatusListeners = new Set<(snapshot: Record<string, LocalRepoGitStatus>) => void>()
 const GITHUB_CHANNELS = {
   snapshot: 'github:snapshot',
   changed: 'github:changed',
@@ -33,88 +23,25 @@ const GITHUB_CHANNELS = {
   checkoutBranch: 'github:checkout-branch',
   pickFolder: 'github:pick-folder',
 } as const
-let githubSnapshot: GithubSnapshot = {
-  auth: {
-    isAuthenticated: false,
-    activeLogin: null,
-  },
-  repositories: [],
-  pullRequests: [],
-  bugs: [],
-  settings: DEFAULT_GITHUB_SETTINGS,
-  sync: {
-    isRefreshing: false,
-    lastRefreshedAt: null,
-    lastUpdateDetectedAt: null,
-    lastError: null,
-  },
-  localRepoStatuses: {},
-}
-const githubListeners = new Set<(snapshot: GithubSnapshot) => void>()
+const todoListeners = new Set<() => void>()
+const repoStatusListeners = new Set<() => void>()
+const githubListeners = new Set<() => void>()
 
-const notifyTodoListeners = (nextSnapshot: Todo[]): void => {
-  todosSnapshot = nextSnapshot
-  for (const listener of todoListeners) {
-    listener(todosSnapshot)
+const notifyListeners = (listeners: Set<() => void>): void => {
+  for (const listener of listeners) {
+    listener()
   }
 }
 
-const notifyGithubListeners = (): void => {
-  for (const listener of githubListeners) {
-    listener(githubSnapshot)
-  }
-}
-
-/** Apply snapshot data immediately; notify React listeners on the next microtask so clicks/navigation win the event loop. */
-const setGithubSnapshotDeferred = (nextSnapshot: GithubSnapshot): void => {
-  githubSnapshot = nextSnapshot
-  queueMicrotask(() => {
-    notifyGithubListeners()
-  })
-}
-
-const refreshTodos = async (): Promise<Todo[]> => {
-  const nextSnapshot = await ipcRenderer.invoke(TODO_CHANNELS.snapshot)
-  notifyTodoListeners(nextSnapshot as Todo[])
-  return todosSnapshot
-}
-
-const notifyRepoStatusListeners = (next: Record<string, LocalRepoGitStatus>): void => {
-  repoStatusSnapshot = next
-  for (const listener of repoStatusListeners) {
-    listener(repoStatusSnapshot)
-  }
-}
-
-ipcRenderer.on(TODO_CHANNELS.changed, (_event, nextSnapshot: Todo[]) => {
-  notifyTodoListeners(nextSnapshot)
-})
-
-ipcRenderer.on(GITHUB_CHANNELS.changed, (_event, nextSnapshot: GithubSnapshot) => {
-  setGithubSnapshotDeferred(nextSnapshot)
-})
-
-ipcRenderer.on(
-  REPO_STATUS_CHANNELS.changed,
-  (_event, next: Record<string, LocalRepoGitStatus>) => {
-    notifyRepoStatusListeners(next)
-  },
-)
-
-void refreshTodos()
-void ipcRenderer.invoke(GITHUB_CHANNELS.snapshot).then((nextSnapshot) => {
-  setGithubSnapshotDeferred(nextSnapshot as GithubSnapshot)
-})
-void ipcRenderer
-  .invoke(REPO_STATUS_CHANNELS.snapshot)
-  .then((next) => notifyRepoStatusListeners(next as Record<string, LocalRepoGitStatus>))
+ipcRenderer.on(TODO_CHANNELS.changed, () => notifyListeners(todoListeners))
+ipcRenderer.on(GITHUB_CHANNELS.changed, () => notifyListeners(githubListeners))
+ipcRenderer.on(REPO_STATUS_CHANNELS.changed, () => notifyListeners(repoStatusListeners))
 
 const api = {
   repoStatuses: {
-    getSnapshot: () => repoStatusSnapshot,
-    subscribe: (listener: (snapshot: Record<string, LocalRepoGitStatus>) => void) => {
+    getSnapshot: () => ipcRenderer.invoke(REPO_STATUS_CHANNELS.snapshot),
+    subscribeChanged: (listener: () => void) => {
       repoStatusListeners.add(listener)
-      listener(repoStatusSnapshot)
       return () => {
         repoStatusListeners.delete(listener)
       }
@@ -127,67 +54,42 @@ const api = {
     },
   },
   todos: {
-    getSnapshot: () => todosSnapshot,
-    subscribe: (listener: (snapshot: Todo[]) => void) => {
+    getSnapshot: () => ipcRenderer.invoke(TODO_CHANNELS.snapshot),
+    subscribeChanged: (listener: () => void) => {
       todoListeners.add(listener)
-      listener(todosSnapshot)
-
       return () => {
         todoListeners.delete(listener)
       }
     },
-    refresh: refreshTodos,
+    refresh: () => ipcRenderer.invoke(TODO_CHANNELS.snapshot),
     add: (text: string) => ipcRenderer.invoke(TODO_CHANNELS.add, text),
     toggle: (id: string) => ipcRenderer.invoke(TODO_CHANNELS.toggle, id),
     remove: (id: string) => ipcRenderer.invoke(TODO_CHANNELS.remove, id),
   },
   github: {
-    getSnapshot: () => githubSnapshot,
-    subscribe: (listener: (snapshot: GithubSnapshot) => void) => {
+    getSnapshot: () => ipcRenderer.invoke(GITHUB_CHANNELS.snapshot),
+    subscribeChanged: (listener: () => void) => {
       githubListeners.add(listener)
-      listener(githubSnapshot)
-
       return () => {
         githubListeners.delete(listener)
       }
     },
-    refresh: async () => {
-      const nextSnapshot = (await ipcRenderer.invoke(GITHUB_CHANNELS.refresh)) as GithubSnapshot
-      // Main process flushes snapshot after commit; safe to apply (see GithubStoreService).
-      setGithubSnapshotDeferred(nextSnapshot)
-      return nextSnapshot
-    },
-    updateSettings: async (partial: Partial<GithubSettings>) => {
-      const nextSnapshot = (await ipcRenderer.invoke(
-        GITHUB_CHANNELS.updateSettings,
-        partial,
-      )) as GithubSnapshot
-      setGithubSnapshotDeferred(nextSnapshot)
-      return nextSnapshot
-    },
-    setBugStatus: async (commentId: string, status: BugStatus, manual: boolean) => {
-      const nextSnapshot = (await ipcRenderer.invoke(GITHUB_CHANNELS.setBugStatus, {
+    refresh: () => ipcRenderer.invoke(GITHUB_CHANNELS.refresh),
+    updateSettings: (partial: Partial<GithubSettings>) =>
+      ipcRenderer.invoke(GITHUB_CHANNELS.updateSettings, partial),
+    setBugStatus: (commentId: string, status: BugStatus, manual: boolean) =>
+      ipcRenderer.invoke(GITHUB_CHANNELS.setBugStatus, {
         commentId,
         status,
         manual,
-      })) as GithubSnapshot
-      setGithubSnapshotDeferred(nextSnapshot)
-      return nextSnapshot
-    },
+      }),
     listAccounts: () =>
       ipcRenderer.invoke(GITHUB_CHANNELS.listAccounts) as Promise<GithubAccount[]>,
     playSound: (soundName: MacOsNotificationSound) =>
       ipcRenderer.invoke(GITHUB_CHANNELS.playSound, soundName) as Promise<void>,
     sendTestNotification: (event: PrNotificationEvent) =>
       ipcRenderer.invoke(GITHUB_CHANNELS.sendTestNotification, event) as Promise<void>,
-    switchAccount: async (login: string) => {
-      const nextSnapshot = (await ipcRenderer.invoke(
-        GITHUB_CHANNELS.switchAccount,
-        login,
-      )) as GithubSnapshot
-      setGithubSnapshotDeferred(nextSnapshot)
-      return nextSnapshot
-    },
+    switchAccount: (login: string) => ipcRenderer.invoke(GITHUB_CHANNELS.switchAccount, login),
     squashAndMerge: (prUrl: string) =>
       ipcRenderer.invoke(GITHUB_CHANNELS.squashMerge, prUrl) as Promise<void>,
     setRepoPath: (nameWithOwner: string, localPath: string) =>

@@ -20,7 +20,7 @@ import {
   type GithubSnapshot,
   type PrNotificationEvent,
 } from '../shared/github'
-import type { GithubStoreService } from './livestore/github-store'
+import type { GithubStoreService } from './db/github-store'
 
 const execFileAsync = promisify(execFile)
 
@@ -623,7 +623,7 @@ export class GithubSyncService {
   async init(): Promise<void> {
     this.settingsPath = join(app.getPath('userData'), SETTINGS_FILE_NAME)
 
-    // Seed settings: use the LiveStore value if it exists, otherwise migrate
+    // Seed settings: use the SQLite value if it exists, otherwise migrate
     // from the legacy JSON file and commit to the store.
     if (!this.githubStore.hasStoredSettings()) {
       const settings = await this.loadSettingsFromJsonFile()
@@ -830,7 +830,7 @@ export class GithubSyncService {
 
   /**
    * Legacy: read settings from the JSON file on disk.
-   * Used only on first startup after migration to LiveStore.
+   * Used only on first startup after migration to SQLite.
    */
   private async loadSettingsFromJsonFile(): Promise<GithubSettings> {
     try {

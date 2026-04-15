@@ -3,7 +3,10 @@ import './assets/base.css'
 
 import React from 'react'
 import ReactDOM from 'react-dom/client'
+import { QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter } from '@tanstack/react-router'
+import { QueryInvalidationBridge } from '@renderer/components/query-invalidation-bridge'
+import { queryClient } from '@renderer/lib/query-client'
 
 // Import the generated route tree
 import { routeTree } from './routeTree.gen'
@@ -26,6 +29,9 @@ declare module '@tanstack/react-router' {
 
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>
-    <RouterProvider router={router} />
+    <QueryClientProvider client={queryClient}>
+      <QueryInvalidationBridge />
+      <RouterProvider router={router} />
+    </QueryClientProvider>
   </React.StrictMode>
 )

@@ -1,7 +1,7 @@
 import { ipcMain, type BrowserWindow } from 'electron'
-import { REPO_STATUS_CHANNELS } from '../shared/livestore/channels'
+import { REPO_STATUS_CHANNELS } from '../shared/ipc/channels'
 import type { GithubSyncService } from './github-sync-service'
-import type { RepoStatusStore } from './livestore/repo-status-store'
+import type { RepoStatusStore } from './db/repo-status-store'
 
 /**
  * AppLifecycleService

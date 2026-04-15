@@ -1,6 +1,5 @@
 import { formatDistanceToNow } from 'date-fns'
 import { Link } from '@tanstack/react-router'
-import { MapPin } from 'lucide-react'
 import { OpenInBrowserButton } from '@renderer/components/pr/pr-block/open-in-browser-button'
 import { Icons } from '@renderer/components/icons'
 import { ListItem } from '@renderer/components/ui/list'
@@ -24,13 +23,6 @@ export function BugRow({
       ? `${pr.repositoryNameWithOwner} · ${formatDistanceToNow(bug.detectedAt, { addSuffix: true })}`
       : formatDistanceToNow(bug.detectedAt, { addSuffix: true })
   const resolved = bug.status === 'resolved'
-  const locationsPreview =
-    bug.affectedLocations.length === 0
-      ? null
-      : bug.affectedLocations.length === 1
-        ? bug.affectedLocations[0]
-        : `${bug.affectedLocations[0]} +${bug.affectedLocations.length - 1}`
-
   return (
     <ListItem
       className={cn(

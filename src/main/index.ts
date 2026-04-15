@@ -3,17 +3,19 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { GithubSyncService } from './github-sync-service'
-import { GithubStoreService } from './livestore/github-store'
-import { TodoStoreService } from './livestore/todo-store'
-import { RepoStatusStore } from './livestore/repo-status-store'
+import { AppDatabase } from './db/client'
+import { GithubStoreService } from './db/github-store'
+import { TodoStoreService } from './db/todo-store'
+import { RepoStatusStore } from './db/repo-status-store'
 import { AppLifecycleService } from './app-lifecycle'
 
 const WINDOW_WIDTH = 1200
 const WINDOW_HEIGHT = 800
 const NAVBAR_HEIGHT = 56
 
-const todoStore = new TodoStoreService()
-const githubStore = new GithubStoreService()
+const database = new AppDatabase()
+const todoStore = new TodoStoreService(database)
+const githubStore = new GithubStoreService(database)
 const githubSyncService = new GithubSyncService(githubStore)
 const repoStatusStore = new RepoStatusStore()
 const lifecycle = new AppLifecycleService(githubSyncService, repoStatusStore)
@@ -62,6 +64,7 @@ function createWindow(): void {
 
 app.whenReady().then(async () => {
   electronApp.setAppUserModelId('com.csnap.app')
+  database.init()
 
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
@@ -105,4 +108,5 @@ app.on('before-quit', () => {
   void todoStore.shutdown()
   void repoStatusStore.shutdown()
   lifecycle.unregisterIpcHandlers()
+  database.shutdown()
 })

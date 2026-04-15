@@ -7,16 +7,9 @@ import { useGithubSnapshot } from '@renderer/hooks/use-github-snapshot'
 import { normalizeCiState } from '@renderer/lib/pr-ci'
 
 export const Route = createFileRoute('/prs/$prId')({
-  /**
-   * Built-in loader so `preloadRoute` / `preload="intent"` actually resolve data (see preloading + data-loading guides).
-   * Data lives in preload’s GitHub snapshot (external to the router); `preloadStaleTime: 0` re-reads on each preload.
-   */
-  loader: ({ params }) => {
-    const pullRequest = window.api.github
-      .getSnapshot()
-      .pullRequests.find((candidate) => candidate.id === params.prId)
-
-    console.log('pullRequest', pullRequest)
+  loader: async ({ params }) => {
+    const snapshot = await window.api.github.getSnapshot()
+    const pullRequest = snapshot.pullRequests.find((candidate) => candidate.id === params.prId)
     return { pullRequest }
   },
   preloadStaleTime: 0,
@@ -47,7 +40,7 @@ function PullRequestDetailPage() {
   const hasRunningCi =
     pullRequest?.ciStatuses.some((ci) => normalizeCiState(ci) === 'pending') ?? false
 
-  // Full GitHub sync re-fetches all open PRs and writes them to LiveStore. Run on each
+  // Full GitHub sync re-fetches all open PRs and writes them to SQLite. Run on each
   // navigation to this detail route so comments/CI/commits match GitHub without waiting
   // for the background poll or window-focus refresh.
   React.useEffect(() => {

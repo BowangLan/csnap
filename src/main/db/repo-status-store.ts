@@ -1,26 +1,11 @@
 import { BrowserWindow, ipcMain } from 'electron'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { REPO_STATUS_CHANNELS } from '../../shared/livestore/channels'
+import { REPO_STATUS_CHANNELS } from '../../shared/ipc/channels'
 import type { LocalRepoGitStatus } from '../../shared/github'
 
 const execFileAsync = promisify(execFile)
 
-// ─── git status parser ───────────────────────────────────────────────────────
-
-/**
- * Parses the output of `git status --porcelain=2 --branch` into a structured
- * status object.  Format reference:
- *
- *   # branch.oid <commit>
- *   # branch.head <name>        (or "(detached)")
- *   # branch.upstream <name>    (optional)
- *   # branch.ab +<ahead> -<behind>  (optional, only when upstream exists)
- *   1 <xy> ...  tracked-changed file
- *   2 <xy> ...  renamed/copied file
- *   ? <path>    untracked file
- *   u <xy> ...  unmerged (conflict) file
- */
 function parseGitStatus(
   nameWithOwner: string,
   localPath: string,
@@ -93,13 +78,6 @@ async function fetchOneRepoStatus(
   }
 }
 
-// ─── Service ─────────────────────────────────────────────────────────────────
-
-/**
- * Maintains an in-memory map of local git statuses, keyed by "owner/repo".
- * Git status is ephemeral and always re-fetched on app start/focus, so there
- * is no benefit to persisting it across sessions — a plain Map is sufficient.
- */
 export class RepoStatusStore {
   private snapshot: Map<string, LocalRepoGitStatus> = new Map()
   private isSyncing = false
@@ -109,16 +87,10 @@ export class RepoStatusStore {
     this.registerIpcHandlers()
   }
 
-  /** Return the current set of repo statuses keyed by nameWithOwner. */
   getSnapshot(): Record<string, LocalRepoGitStatus> {
     return Object.fromEntries(this.snapshot)
   }
 
-  /**
-   * Fetch git status for every configured local repo path and update the
-   * in-memory snapshot.  Concurrent calls are coalesced: if a sync is
-   * already running the second call is a no-op.
-   */
   async syncAll(localRepoPaths: Record<string, string>): Promise<void> {
     if (this.isSyncing) return
     const entries = Object.entries(localRepoPaths)

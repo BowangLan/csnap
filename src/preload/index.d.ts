@@ -15,26 +15,24 @@ declare global {
     electron: ElectronAPI
     api: {
       repoStatuses: {
-        getSnapshot: () => Record<string, LocalRepoGitStatus>
-        subscribe: (
-          listener: (snapshot: Record<string, LocalRepoGitStatus>) => void,
-        ) => () => void
+        getSnapshot: () => Promise<Record<string, LocalRepoGitStatus>>
+        subscribeChanged: (listener: () => void) => () => void
         syncAll: () => Promise<void>
       }
       shell: {
         openExternal: (url: string) => void
       }
       todos: {
-        getSnapshot: () => Todo[]
-        subscribe: (listener: (snapshot: Todo[]) => void) => () => void
+        getSnapshot: () => Promise<Todo[]>
+        subscribeChanged: (listener: () => void) => () => void
         refresh: () => Promise<Todo[]>
         add: (text: string) => Promise<void>
         toggle: (id: string) => Promise<void>
         remove: (id: string) => Promise<void>
       }
       github: {
-        getSnapshot: () => GithubSnapshot
-        subscribe: (listener: (snapshot: GithubSnapshot) => void) => () => void
+        getSnapshot: () => Promise<GithubSnapshot>
+        subscribeChanged: (listener: () => void) => () => void
         refresh: () => Promise<GithubSnapshot>
         updateSettings: (partial: Partial<GithubSettings>) => Promise<GithubSnapshot>
         setBugStatus: (
