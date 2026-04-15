@@ -10,7 +10,6 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as UsersRouteImport } from './routes/users'
-import { Route as TodosRouteImport } from './routes/todos'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ReposRouteImport } from './routes/repos'
 import { Route as PrsRouteImport } from './routes/prs'
@@ -23,11 +22,6 @@ import { Route as PrsPrIdRouteImport } from './routes/prs.$prId'
 const UsersRoute = UsersRouteImport.update({
   id: '/users',
   path: '/users',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const TodosRoute = TodosRouteImport.update({
-  id: '/todos',
-  path: '/todos',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SettingsRoute = SettingsRouteImport.update({
@@ -78,7 +72,6 @@ export interface FileRoutesByFullPath {
   '/prs': typeof PrsRouteWithChildren
   '/repos': typeof ReposRoute
   '/settings': typeof SettingsRoute
-  '/todos': typeof TodosRoute
   '/users': typeof UsersRoute
   '/prs/$prId': typeof PrsPrIdRoute
   '/prs/': typeof PrsIndexRoute
@@ -89,7 +82,6 @@ export interface FileRoutesByTo {
   '/dashboard': typeof DashboardRoute
   '/repos': typeof ReposRoute
   '/settings': typeof SettingsRoute
-  '/todos': typeof TodosRoute
   '/users': typeof UsersRoute
   '/prs/$prId': typeof PrsPrIdRoute
   '/prs': typeof PrsIndexRoute
@@ -102,7 +94,6 @@ export interface FileRoutesById {
   '/prs': typeof PrsRouteWithChildren
   '/repos': typeof ReposRoute
   '/settings': typeof SettingsRoute
-  '/todos': typeof TodosRoute
   '/users': typeof UsersRoute
   '/prs/$prId': typeof PrsPrIdRoute
   '/prs/': typeof PrsIndexRoute
@@ -116,7 +107,6 @@ export interface FileRouteTypes {
     | '/prs'
     | '/repos'
     | '/settings'
-    | '/todos'
     | '/users'
     | '/prs/$prId'
     | '/prs/'
@@ -127,7 +117,6 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/repos'
     | '/settings'
-    | '/todos'
     | '/users'
     | '/prs/$prId'
     | '/prs'
@@ -139,7 +128,6 @@ export interface FileRouteTypes {
     | '/prs'
     | '/repos'
     | '/settings'
-    | '/todos'
     | '/users'
     | '/prs/$prId'
     | '/prs/'
@@ -152,7 +140,6 @@ export interface RootRouteChildren {
   PrsRoute: typeof PrsRouteWithChildren
   ReposRoute: typeof ReposRoute
   SettingsRoute: typeof SettingsRoute
-  TodosRoute: typeof TodosRoute
   UsersRoute: typeof UsersRoute
 }
 
@@ -163,13 +150,6 @@ declare module '@tanstack/react-router' {
       path: '/users'
       fullPath: '/users'
       preLoaderRoute: typeof UsersRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/todos': {
-      id: '/todos'
-      path: '/todos'
-      fullPath: '/todos'
-      preLoaderRoute: typeof TodosRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/settings': {
@@ -250,7 +230,6 @@ const rootRouteChildren: RootRouteChildren = {
   PrsRoute: PrsRouteWithChildren,
   ReposRoute: ReposRoute,
   SettingsRoute: SettingsRoute,
-  TodosRoute: TodosRoute,
   UsersRoute: UsersRoute,
 }
 export const routeTree = rootRouteImport
