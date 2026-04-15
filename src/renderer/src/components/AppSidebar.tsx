@@ -1,5 +1,6 @@
 import { FolderGit2, GitPullRequest, Home, Settings } from "lucide-react"
 import { Link } from "@tanstack/react-router"
+import { SidebarAccountsMenu } from "@renderer/components/SidebarAccountsMenu"
 import {
   Sidebar,
   SidebarContent,
@@ -47,6 +48,11 @@ export function AppSidebar() {
         </div>
       </SidebarHeader>
       <SidebarContent>
+        <SidebarGroup className="pb-0">
+          <SidebarGroupContent>
+            <SidebarAccountsMenu />
+          </SidebarGroupContent>
+        </SidebarGroup>
         <SidebarGroup>
           <SidebarGroupLabel>Application</SidebarGroupLabel>
           <SidebarGroupContent>

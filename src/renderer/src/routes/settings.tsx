@@ -5,9 +5,6 @@ import { toast } from 'sonner'
 import {
   Bell,
   RefreshCw,
-  Users,
-  CheckCircle2,
-  XCircle,
   Loader2,
   Volume2,
   FolderOpen,
@@ -20,7 +17,6 @@ import { Input } from '@renderer/components/ui/input'
 import { Label } from '@renderer/components/ui/label'
 import { Switch } from '@renderer/components/ui/switch'
 import { Button } from '@renderer/components/ui/button'
-import { Badge } from '@renderer/components/ui/badge'
 import { Separator } from '@renderer/components/ui/separator'
 import {
   Select,
@@ -33,7 +29,6 @@ import {
   DEFAULT_EVENT_SOUNDS,
   MACOS_NOTIFICATION_SOUNDS,
   type EventSoundConfig,
-  type GithubAccount,
   type GithubRepository,
   type GithubSettings,
   type MacOsNotificationSound,
@@ -183,8 +178,6 @@ function Settings() {
   )
   const [isTesting, setIsTesting] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
-  const [accounts, setAccounts] = useState<GithubAccount[]>([])
-  const [switchingLogin, setSwitchingLogin] = useState<string | null>(null)
 
   useEffect(() => {
     setRefreshIntervalSeconds(String(snapshot.settings.refreshIntervalSeconds))
@@ -199,24 +192,6 @@ function Settings() {
     snapshot.settings.eventSounds,
     snapshot.settings.nativeNotifications,
   ])
-
-  useEffect(() => {
-    window.api.github.listAccounts().then(setAccounts).catch(() => setAccounts([]))
-  }, [snapshot.auth.activeLogin])
-
-  const handleSwitchAccount = async (login: string) => {
-    setSwitchingLogin(login)
-    try {
-      await window.api.github.switchAccount(login)
-      const updated = await window.api.github.listAccounts()
-      setAccounts(updated)
-      toast.success(`Switched to ${login}.`)
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to switch account.')
-    } finally {
-      setSwitchingLogin(null)
-    }
-  }
 
   const handleTestSound = async () => {
     setIsTesting(true)
@@ -449,62 +424,6 @@ function Settings() {
                 {snapshot.sync.lastError}
               </div>
             </>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Accounts */}
-      <Card>
-        <CardHeader className="pb-3">
-          <SectionHeader
-            icon={Users}
-            title="Accounts"
-            description="GitHub accounts authenticated via the gh CLI."
-          />
-        </CardHeader>
-        <CardContent className="pt-0">
-          <Separator />
-          {accounts.length === 0 ? (
-            <p className="py-4 text-sm text-muted-foreground text-center">No accounts found.</p>
-          ) : (
-            <div className="divide-y">
-              {accounts.map((account) => (
-                <div
-                  key={`${account.hostname}/${account.login}`}
-                  className="flex items-center justify-between py-3"
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="shrink-0">
-                      {account.isActive ? (
-                        <CheckCircle2 className="h-4 w-4 text-green-500" />
-                      ) : (
-                        <XCircle className="h-4 w-4 text-muted-foreground/40" />
-                      )}
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium truncate">{account.login}</p>
-                      <p className="text-xs text-muted-foreground truncate">{account.hostname}</p>
-                    </div>
-                    {account.isActive && (
-                      <Badge variant="secondary" className="shrink-0 text-xs">
-                        Active
-                      </Badge>
-                    )}
-                  </div>
-                  {!account.isActive && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={switchingLogin !== null}
-                      onClick={() => handleSwitchAccount(account.login)}
-                      className="ml-3 shrink-0"
-                    >
-                      {switchingLogin === account.login ? 'Switching…' : 'Switch'}
-                    </Button>
-                  )}
-                </div>
-              ))}
-            </div>
           )}
         </CardContent>
       </Card>

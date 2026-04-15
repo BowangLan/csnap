@@ -9,6 +9,7 @@ import { CopyUrlButton } from './copy-url-button'
 import { OpenInBrowserButton } from './open-in-browser-button'
 import { CheckoutBranchButton } from './checkout-branch-button'
 import { Icons } from '@renderer/components/icons'
+import { ListItem } from '@renderer/components/ui/list'
 import { useGithubSnapshot } from '@renderer/hooks/use-github-snapshot'
 import { useRepoStatuses } from '@renderer/hooks/use-repo-statuses'
 
@@ -44,7 +45,14 @@ export function PullRequestBlock({ pullRequest }: { pullRequest: GithubPullReque
   const isActive = Boolean(repoStatus?.branch && repoStatus.branch === pullRequest.headRefName)
 
   return (
-    <Row className="group relative flex-wrap gap-x-1 gap-y-0 rounded-lg px-4 py-2.5 transition-[opacity,background-color] last:border-b-0 hover:bg-muted cursor-pointer has-[a[data-transitioning]]:cursor-wait has-[a[data-transitioning]]:opacity-70">
+    <ListItem
+      className={cn(
+        'group relative flex-wrap gap-x-1 gap-y-0 px-4 py-2.5',
+        'last:border-b-0 cursor-pointer transition-[opacity,background-color]',
+        'hover:bg-muted active:bg-muted/90',
+        'has-[a[data-transitioning]]:cursor-wait has-[a[data-transitioning]]:opacity-70',
+      )}
+    >
       <Link
         to="/prs/$prId"
         params={{ prId: pullRequest.id }}
@@ -137,6 +145,6 @@ export function PullRequestBlock({ pullRequest }: { pullRequest: GithubPullReque
           </a>
         </Button>
       </Row> */}
-    </Row>
+    </ListItem>
   )
 }

@@ -1,7 +1,7 @@
 import React from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { RefreshCw } from 'lucide-react'
-import { PullRequestBlock } from '@renderer/components/pr/pr-block/pr-block'
+import { PullRequestsGroupedList } from '@renderer/components/pr/pull-requests-list'
 import { PullRequestRowSkeleton } from '@renderer/components/pr/pr-block/pull-request-row-skeleton'
 import { useGithubSnapshot } from '@renderer/hooks/use-github-snapshot'
 import { Button } from '@renderer/components/ui/button'
@@ -53,11 +53,7 @@ function PullRequestsListPage() {
             No open pull requests you authored.
           </div>
         ) : (
-          <div className="flex flex-col">
-            {snapshot.pullRequests.map((pullRequest) => (
-              <PullRequestBlock key={pullRequest.id} pullRequest={pullRequest} />
-            ))}
-          </div>
+          <PullRequestsGroupedList pullRequests={snapshot.pullRequests} />
         )}
       </section>
     </div>
