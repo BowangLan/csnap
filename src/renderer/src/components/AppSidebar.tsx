@@ -1,5 +1,5 @@
 import { FolderGit2, GitPullRequest, Home, Settings } from "lucide-react"
-import { Link } from "@tanstack/react-router"
+import { Link, useRouterState } from "@tanstack/react-router"
 import { SidebarAccountsMenu } from "@renderer/components/SidebarAccountsMenu"
 import {
   Sidebar,
@@ -10,12 +10,12 @@ import {
   SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
-  SidebarMenuButton,
   SidebarMenuItem,
   SidebarRail,
 } from "@renderer/components/ui/sidebar"
+import { ListItem } from "@renderer/components/ui/list"
+import { cn } from "@renderer/lib/utils"
 
-// Menu items.
 const items = [
   {
     title: "Home",
@@ -39,6 +39,23 @@ const items = [
   },
 ]
 
+function NavItem({ item }: { item: (typeof items)[0] }) {
+  const isActive = useRouterState({ select: (s) => s.location.pathname === item.url })
+  return (
+    <SidebarMenuItem>
+      <Link to={item.url} className="block">
+        <ListItem
+          enableHover={!isActive}
+          className={cn(isActive ? "bg-sidebar-accent text-sidebar-primary" : "", "py-1.5")}
+        >
+          <item.icon className="size-4 shrink-0" />
+          <span>{item.title}</span>
+        </ListItem>
+      </Link>
+    </SidebarMenuItem>
+  )
+}
+
 export function AppSidebar() {
   return (
     <Sidebar collapsible="icon">
@@ -58,14 +75,7 @@ export function AppSidebar() {
           <SidebarGroupContent>
             <SidebarMenu>
               {items.map((item) => (
-                <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton asChild tooltip={item.title}>
-                    <Link to={item.url} activeProps={{ className: "font-semibold text-sidebar-primary bg-sidebar-accent" }}>
-                      <item.icon />
-                      <span>{item.title}</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
+                <NavItem key={item.title} item={item} />
               ))}
             </SidebarMenu>
           </SidebarGroupContent>
