@@ -12,7 +12,7 @@ export function CopyBranchButton({ branchName }: { branchName: string }) {
   return (
     <button
       onClick={handleCopy}
-      className="relative z-10 pointer-events-auto inline-flex max-w-fit items-center gap-1.5 rounded px-1.5 py-0.5 font-mono text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+      className="relative z-10 pointer-events-auto inline-flex w-full min-w-0 items-center gap-1.5 rounded px-1.5 py-0.5 font-mono text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
       title={`Copy branch name: ${branchName}`}
     >
       <GitBranch className="h-3 w-3 shrink-0" />

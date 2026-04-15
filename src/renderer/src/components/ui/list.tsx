@@ -1,14 +1,15 @@
 import { cn } from "@renderer/lib/utils"
 
-export const ListItem = ({ children, enableHover = true, className }: { children: React.ReactNode, enableHover?: boolean, className?: string }) => {
+export const ListItem = ({ children, enableHover = true, className, ...props }: { children: React.ReactNode, enableHover?: boolean, className?: string } & React.ComponentProps<"div">) => {
   return (
     <div
       className={cn(
-        "flex items-center gap-3 rounded-lg px-3 py-2",
-        "transition-all duration-200 ease-out",
-        enableHover && "hover:bg-muted/80 active:bg-muted",
+        "flex items-center gap-3 rounded-lg px-3.5 py-2.5",
+        "transition-all duration-100 ease-out",
+        enableHover && "hover:bg-muted active:bg-accent/60",
         className
       )}
+      {...props}
     >
       {children}
     </div>

@@ -6,7 +6,7 @@ export function PullRequestsGroupedList({ pullRequests }: { pullRequests: Github
   const groups = groupPullRequestsByRepo(pullRequests)
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col gap-2">
       {groups.map((group) => (
         <PullRequestsRepoSection key={group.repositoryNameWithOwner} group={group} />
       ))}

@@ -48,7 +48,7 @@ export function PullRequestBlock({ pullRequest }: { pullRequest: GithubPullReque
     <ListItem
       className={cn(
         'group relative flex-wrap gap-x-1 gap-y-0 px-4 py-2.5',
-        'last:border-b-0 cursor-pointer transition-[opacity,background-color]',
+        'last:border-b-0 cursor-default transition-[opacity,background-color]',
         'hover:bg-muted active:bg-muted/90',
         'has-[a[data-transitioning]]:cursor-wait has-[a[data-transitioning]]:opacity-70',
       )}
@@ -145,6 +145,80 @@ export function PullRequestBlock({ pullRequest }: { pullRequest: GithubPullReque
           </a>
         </Button>
       </Row> */}
+    </ListItem>
+  )
+}
+
+export function PullRequestBlockRow({ pullRequest }: { pullRequest: GithubPullRequest }) {
+  const meta = `${pullRequest.repositoryNameWithOwner} · ${pullRequest.authorLogin ?? 'unknown'} · ${formatDistanceToNow(pullRequest.updatedAt, { addSuffix: true })}`
+  const ciStatus = deriveCiStatus(pullRequest.ciStatuses)
+  const snapshot = useGithubSnapshot()
+  const repoStatuses = useRepoStatuses()
+  const hasLocalPath = Boolean(snapshot.settings.localRepoPaths[pullRequest.repositoryNameWithOwner])
+  const repoStatus = repoStatuses[pullRequest.repositoryNameWithOwner]
+  const isActive = Boolean(repoStatus?.branch && repoStatus.branch === pullRequest.headRefName)
+
+  return (
+    <ListItem
+      className={cn(
+        'group relative gap-x-4',
+        'has-[a[data-transitioning]]:cursor-wait has-[a[data-transitioning]]:opacity-70',
+      )}
+    >
+      <Link
+        to="/prs/$prId"
+        params={{ prId: pullRequest.id }}
+        className="absolute inset-0 z-0 rounded-lg"
+        aria-label={`View pull request ${pullRequest.number}`}
+      />
+
+      {/* Row Item: PR Status */}
+      <div className="flex-none relative">
+        <Icons.PullRequest className="size-4 text-muted-foreground pointer-events-none flex-none" />
+        {ciStatus ? (
+          <span
+            className={cn(
+              'absolute -top-0.5 -right-0.5 size-1.5 rounded-full ring-1 ring-background',
+              CI_DOT_CLASS[ciStatus]
+            )}
+          />
+        ) : null}
+      </div>
+
+      {/* Row Item: PR Number */}
+      <div className="font-normal text-foreground/70 text-sm font-mono min-w-0 flex-none w-8.5">#{pullRequest.number}</div>
+
+      {/* Row Item: Title */}
+      <div
+        className="truncate text-sm font-medium min-w-0 shrink-0 basis-[min(40%,20rem)]"
+        title={`${pullRequest.title} — ${meta}`}
+      >
+        {pullRequest.title}
+      </div>
+      <div className="flex min-w-0 shrink-0 basis-[min(30%,18rem)] overflow-hidden items-center">
+        {pullRequest.headRefName ? (
+          <CopyBranchButton branchName={pullRequest.headRefName} />
+        ) : null}
+      </div>
+
+      <div className='flex-1'></div>
+
+      <p className="relative z-10 hidden min-w-0 max-w-[min(100%,20rem)] truncate text-xs text-muted-foreground md:block pointer-events-none">
+        {formatDistanceToNow(pullRequest.updatedAt, { addSuffix: true })}
+      </p>
+      <div className="shrink-0 flex items-center gap-2">
+        <CheckoutBranchButton
+          nameWithOwner={pullRequest.repositoryNameWithOwner}
+          branch={pullRequest.headRefName}
+          hasLocalPath={hasLocalPath}
+          isActive={isActive}
+        />
+
+        <div className='overflow-hidden flex-none gap-2 flex items-center'>
+          <CopyUrlButton url={pullRequest.url} />
+          <OpenInBrowserButton url={pullRequest.url} />
+        </div>
+      </div>
     </ListItem>
   )
 }
