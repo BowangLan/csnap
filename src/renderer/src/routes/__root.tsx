@@ -61,7 +61,7 @@ const RootLayout = () => {
       <AppSidebar />
       <SidebarInset className="min-h-0 overflow-hidden">
         <AppHeader pageName={pageName} />
-        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-2 pb-4 pt-0 mt-4">
+        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-2 pb-4 pt-0 pt-2">
           <Outlet />
         </div>
       </SidebarInset>

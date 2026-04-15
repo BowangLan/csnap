@@ -1,273 +1,113 @@
-import { createFileRoute, Link } from '@tanstack/react-router'
-import { formatDistanceToNow } from 'date-fns'
-import { ExternalLink, MapPin } from 'lucide-react'
+import { useState } from 'react'
+import { createFileRoute } from '@tanstack/react-router'
+import { RefreshCw } from 'lucide-react'
 import { Icons } from '@renderer/components/icons'
+import { BugsGroupedList, type BugSortMode } from '@renderer/components/bugs/bugs-list'
+import { BugRowSkeleton } from '@renderer/components/bugs/bug-block'
 import { useGithubSnapshot } from '@renderer/hooks/use-github-snapshot'
 import { Badge } from '@renderer/components/ui/badge'
+import { Button } from '@renderer/components/ui/button'
 import {
   Select,
   SelectContent,
   SelectItem,
-  SelectSeparator,
   SelectTrigger,
-  SelectValue,
+  SelectValue
 } from '@renderer/components/ui/select'
-import { Skeleton } from '@renderer/components/ui/skeleton'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@renderer/components/ui/table'
-import { inferBugStatusFromComment } from '../../../shared/bug-detection'
-import type { BugStatus, GithubPullRequest, PrBug } from '../../../shared/github'
+import { Label } from '@renderer/components/ui/label'
+import { Switch } from '@renderer/components/ui/switch'
 
 export const Route = createFileRoute('/bugs')({
-  component: BugsPage,
+  component: BugsPage
 })
 
-const SEVERITY_STYLES: Record<PrBug['severity'], string> = {
-  LOW: 'bg-blue-500/10 text-blue-600 border-blue-500/20 dark:text-blue-400',
-  MEDIUM: 'bg-amber-500/10 text-amber-600 border-amber-500/20 dark:text-amber-400',
-  HIGH: 'bg-orange-500/10 text-orange-600 border-orange-500/20 dark:text-orange-400',
-  CRITICAL: 'bg-red-500/10 text-red-600 border-red-500/20 dark:text-red-400',
-  UNKNOWN: 'bg-muted text-muted-foreground border-border',
-}
-
-const SEVERITY_ORDER: Record<PrBug['severity'], number> = {
-  CRITICAL: 0,
-  HIGH: 1,
-  MEDIUM: 2,
-  LOW: 3,
-  UNKNOWN: 4,
-}
-
-const STATUS_ORDER: Record<BugStatus, number> = {
-  todo: 0,
-  resolved: 1,
-  ignored: 2,
-  'in-progress': 3,
-}
-
-/** Select value when status follows GitHub-derived detection (not pinned). */
-const STATUS_FOLLOW_GITHUB = '__github__'
-
-function SeverityBadge({ severity }: { severity: PrBug['severity'] }) {
-  return (
-    <span
-      className={`inline-flex items-center rounded border px-1.5 py-0.5 font-mono text-[10px] font-medium leading-none ${SEVERITY_STYLES[severity]}`}
-    >
-      {severity}
-    </span>
-  )
-}
-
-function statusLabel(status: BugStatus): string {
-  switch (status) {
-    case 'resolved':
-      return 'Resolved'
-    case 'ignored':
-      return 'Ignored'
-    case 'in-progress':
-      return 'In progress'
-    default:
-      return 'To do'
-  }
-}
-
-const MANUAL_STATUS_VALUES: BugStatus[] = ['todo', 'in-progress', 'resolved', 'ignored']
-
-function BugStatusSelect({ bug, pr }: { bug: PrBug; pr: GithubPullRequest | undefined }) {
-  const selectValue = bug.statusIsManual ? bug.status : STATUS_FOLLOW_GITHUB
-
-  const applyChange = (value: string) => {
-    if (value === STATUS_FOLLOW_GITHUB) {
-      const comment = pr?.comments.find((c) => c.id === bug.commentId)
-      const next = comment ? inferBugStatusFromComment(comment) : bug.status
-      void window.api.github.setBugStatus(bug.commentId, next, false)
-      return
-    }
-    void window.api.github.setBugStatus(bug.commentId, value as BugStatus, true)
-  }
-
-  return (
-    <Select value={selectValue} onValueChange={applyChange}>
-      <SelectTrigger size="sm" className="h-8 w-[min(100%,12.5rem)] text-[11px]">
-        <SelectValue>
-          {bug.statusIsManual
-            ? `${statusLabel(bug.status)} · pinned`
-            : `${statusLabel(bug.status)} · GitHub`}
-        </SelectValue>
-      </SelectTrigger>
-      <SelectContent>
-        <SelectItem value={STATUS_FOLLOW_GITHUB}>Match GitHub (comment)</SelectItem>
-        <SelectSeparator />
-        {MANUAL_STATUS_VALUES.map((s) => (
-          <SelectItem key={s} value={s}>
-            {statusLabel(s)} (manual)
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  )
-}
-
-function BugsTableSkeleton() {
-  return (
-    <div className="divide-y">
-      {Array.from({ length: 4 }).map((_, i) => (
-        <div key={i} className="flex items-center gap-4 px-3 py-3.5">
-          <Skeleton className="h-4 w-16" />
-          <Skeleton className="h-4 w-14" />
-          <div className="flex-1 space-y-1.5">
-            <Skeleton className="h-4 w-72 max-w-full" />
-            <Skeleton className="h-3 w-44 max-w-full" />
-          </div>
-          <Skeleton className="h-4 w-28" />
-          <Skeleton className="h-4 w-20" />
-        </div>
-      ))}
-    </div>
-  )
-}
-
-function BugsPage() {
+function BugsPage(): JSX.Element {
   const snapshot = useGithubSnapshot()
   const isInitialLoading = snapshot.sync.isRefreshing && snapshot.sync.lastRefreshedAt === null
+  const [sortMode, setSortMode] = useState<BugSortMode>('detected')
+  const [nestByPr, setNestByPr] = useState(true)
 
-  const bugs = [...snapshot.bugs].sort((a, b) => {
-    const byStatus = STATUS_ORDER[a.status] - STATUS_ORDER[b.status]
-    if (byStatus !== 0) return byStatus
-    return SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]
-  })
-
+  const bugs = snapshot.bugs
   const prById = new Map(snapshot.pullRequests.map((pr) => [pr.id, pr]))
 
   return (
-    <div className="flex flex-col gap-4 p-4">
-      <div className="flex items-center gap-3">
-        <h1 className="text-sm font-medium text-foreground flex items-center gap-2">
+    <div className="flex min-w-0 flex-col gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border pb-2">
+        <h1 className="flex items-center gap-2 text-sm font-medium text-foreground">
           <Icons.Bug className="size-4 text-muted-foreground" />
-          Detected Bugs
+          Detected bugs
+          {bugs.length > 0 ? (
+            <Badge variant="secondary" className="tabular-nums">
+              {bugs.length}
+            </Badge>
+          ) : null}
         </h1>
-        {bugs.length > 0 && (
-          <Badge variant="secondary" className="tabular-nums">
-            {bugs.length}
-          </Badge>
-        )}
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {bugs.length > 0 ? (
+            <>
+              <div className="flex items-center gap-2">
+                <Switch
+                  id="bugs-nest-by-pr"
+                  checked={nestByPr}
+                  onCheckedChange={setNestByPr}
+                />
+                <Label
+                  htmlFor="bugs-nest-by-pr"
+                  className="cursor-pointer text-xs font-normal text-muted-foreground sm:text-sm"
+                >
+                  Group by PR
+                </Label>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="hidden text-xs text-muted-foreground sm:inline">Sort</span>
+                <Select value={sortMode} onValueChange={(value) => setSortMode(value as BugSortMode)}>
+                  <SelectTrigger
+                    size="sm"
+                    className="h-8 w-[min(100%,11rem)]"
+                    aria-label="Sort bugs by"
+                  >
+                    <SelectValue placeholder="Sort" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="detected">Detected time</SelectItem>
+                    <SelectItem value="severity">Severity</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </>
+          ) : null}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void window.api.github.refresh()}
+            disabled={snapshot.sync.isRefreshing}
+          >
+            <RefreshCw
+              className={snapshot.sync.isRefreshing ? 'h-4 w-4 animate-spin' : 'h-4 w-4'}
+            />
+            Refresh
+          </Button>
+        </div>
       </div>
 
-      {isInitialLoading ? (
-        <BugsTableSkeleton />
-      ) : bugs.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-border/80 bg-muted/20 px-4 py-12 text-center">
-          <Icons.Bug className="mx-auto mb-3 size-8 text-muted-foreground/40" />
-          <p className="text-sm text-muted-foreground">No bugs detected across your pull requests.</p>
-        </div>
-      ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-24">Severity</TableHead>
-              <TableHead className="w-52 min-w-44">Status</TableHead>
-              <TableHead>Bug</TableHead>
-              <TableHead>Pull Request</TableHead>
-              <TableHead>Affected</TableHead>
-              <TableHead className="w-32">Detected</TableHead>
-              <TableHead className="w-10" />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {bugs.map((bug) => {
-              const pr = prById.get(bug.prId)
-              return (
-                <TableRow key={bug.id}>
-                  <TableCell>
-                    <SeverityBadge severity={bug.severity} />
-                  </TableCell>
-
-                  <TableCell>
-                    <BugStatusSelect bug={bug} pr={pr} />
-                  </TableCell>
-
-                  <TableCell>
-                    <div className="flex flex-col gap-1">
-                      <span
-                        className={`text-sm font-medium leading-snug ${bug.status === 'resolved' ? 'text-muted-foreground line-through decoration-muted-foreground/50' : ''}`}
-                      >
-                        {bug.title}
-                      </span>
-                      {bug.referenceId && (
-                        <span className="font-mono text-[10px] text-muted-foreground">
-                          ref {bug.referenceId}
-                        </span>
-                      )}
-                    </div>
-                  </TableCell>
-
-                  <TableCell>
-                    {pr ? (
-                      <Link
-                        to="/prs/$prId"
-                        params={{ prId: pr.id }}
-                        className="group flex flex-col gap-0.5"
-                      >
-                        <span className="text-sm font-medium group-hover:underline">
-                          #{pr.number}
-                        </span>
-                        <span className="max-w-[18rem] truncate text-xs text-muted-foreground">
-                          {pr.title}
-                        </span>
-                      </Link>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">Unknown PR</span>
-                    )}
-                  </TableCell>
-
-                  <TableCell>
-                    {bug.affectedLocations.length > 0 ? (
-                      <div className="flex flex-wrap items-center gap-1">
-                        <MapPin className="size-3 text-muted-foreground" aria-hidden />
-                        {bug.affectedLocations.map((loc) => (
-                          <code
-                            key={loc}
-                            className="rounded bg-muted px-1 py-px font-mono text-[10px]"
-                            title={loc}
-                          >
-                            {loc.length > 40 ? `…${loc.slice(-38)}` : loc}
-                          </code>
-                        ))}
-                      </div>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">—</span>
-                    )}
-                  </TableCell>
-
-                  <TableCell className="text-xs text-muted-foreground">
-                    {formatDistanceToNow(bug.detectedAt, { addSuffix: true })}
-                  </TableCell>
-
-                  <TableCell>
-                    {pr && (
-                      <a
-                        href={pr.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        aria-label="Open PR on GitHub"
-                        className="inline-flex items-center rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                      >
-                        <ExternalLink className="size-3.5" />
-                      </a>
-                    )}
-                  </TableCell>
-                </TableRow>
-              )
-            })}
-          </TableBody>
-        </Table>
-      )}
+      <section className="min-w-0 space-y-4">
+        {isInitialLoading ? (
+          <div className="flex flex-col">
+            {Array.from({ length: 4 }).map((_, index) => (
+              <BugRowSkeleton key={index} />
+            ))}
+          </div>
+        ) : bugs.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-border/80 bg-muted/20 px-4 py-12 text-center">
+            <Icons.Bug className="mx-auto mb-3 size-8 text-muted-foreground/40" />
+            <p className="text-sm text-muted-foreground">
+              No bugs detected across your pull requests.
+            </p>
+          </div>
+        ) : (
+          <BugsGroupedList bugs={bugs} prById={prById} sortMode={sortMode} nestByPr={nestByPr} />
+        )}
+      </section>
     </div>
   )
 }

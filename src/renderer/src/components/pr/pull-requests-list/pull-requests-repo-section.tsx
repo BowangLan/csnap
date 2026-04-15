@@ -1,9 +1,8 @@
 import { useId, useState } from 'react'
-import { ChevronRight } from 'lucide-react'
 import { Icons } from '@renderer/components/icons'
-import { cn } from '@renderer/lib/utils'
 import type { PullRequestsRepoGroup } from './group-pull-requests-by-repo'
 import { List, ListItem } from '@renderer/components/ui/list'
+import { ListSectionExpandToggle } from '@renderer/components/ui/list-section-expand-toggle'
 import { PullRequestBlockRow } from '../pr-block/pr-block'
 
 export function PullRequestsRepoSection({ group }: { group: PullRequestsRepoGroup }) {
@@ -16,21 +15,16 @@ export function PullRequestsRepoSection({ group }: { group: PullRequestsRepoGrou
   return (
     <section className="min-w-0 space-y-1" aria-labelledby={headingId}>
       <ListItem className="bg-muted py-2" onClick={() => setExpanded((v) => !v)}>
-        <button
-          type="button"
-          className="relative select-none z-10 inline-flex shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:text-foreground"
-          aria-expanded={expanded}
-          aria-controls={listId}
-          title={expanded ? 'Hide pull requests for this repository' : 'Show pull requests for this repository'}
-        >
-          <ChevronRight
-            className={cn('size-4 transition-transform duration-200', expanded && 'rotate-90')}
-            aria-hidden
-          />
-          <span className="sr-only">
-            {expanded ? 'Collapse' : 'Expand'} {group.repositoryNameWithOwner} pull requests
-          </span>
-        </button>
+        <ListSectionExpandToggle
+          expanded={expanded}
+          controlsId={listId}
+          title={
+            expanded
+              ? 'Hide pull requests for this repository'
+              : 'Show pull requests for this repository'
+          }
+          srOnlyLabel={`${expanded ? 'Collapse' : 'Expand'} ${group.repositoryNameWithOwner} pull requests`}
+        />
         <div className='flex items-center gap-1.5 w-fit shrink-0'>
           <Icons.Repo className="size-4 shrink-0 text-muted-foreground" aria-hidden />
           <h2
