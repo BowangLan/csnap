@@ -114,6 +114,9 @@ export interface BugRow {
   prId: string
   commentId: string
   severity: string
+  status: string
+  /** User-locked status; preserved when `githubDataSynced` rebuilds bug rows. */
+  manualStatus: boolean
   title: string
   suggestedFix: string | null
   aiPrompt: string | null
@@ -122,12 +125,20 @@ export interface BugRow {
   detectedAt: number
 }
 
+function parseStoredBugStatus(raw: string | undefined): PrBug['status'] {
+  if (raw === 'resolved' || raw === 'ignored' || raw === 'in-progress') return raw
+  return 'todo'
+}
+
 export function bugRowToPrBug(row: BugRow): PrBug {
+  const status = parseStoredBugStatus(row.status)
   return {
     id: row.id,
     prId: row.prId,
     commentId: row.commentId,
     severity: row.severity as PrBug['severity'],
+    status,
+    statusIsManual: Boolean(row.manualStatus),
     title: row.title,
     suggestedFix: row.suggestedFix,
     aiPrompt: row.aiPrompt,
@@ -222,12 +233,14 @@ export const githubTables = {
       prId: State.SQLite.text(),
       commentId: State.SQLite.text(),
       severity: State.SQLite.text(),
+      status: State.SQLite.text({ default: 'todo' }),
       title: State.SQLite.text(),
       suggestedFix: State.SQLite.text({ nullable: true }),
       aiPrompt: State.SQLite.text({ nullable: true }),
       affectedLocationsJson: State.SQLite.text(),           // JSON.stringify(string[])
       referenceId: State.SQLite.text({ nullable: true }),
       detectedAt: State.SQLite.integer(),
+      manualStatus: State.SQLite.boolean({ default: false }),
     },
   }),
 }
@@ -320,6 +333,16 @@ export const githubEvents = {
       settingsJson: Schema.String, // JSON.stringify(GithubSettings)
     }),
   }),
+
+  /** User changed bug status in the UI (or cleared manual override to follow GitHub). */
+  githubBugStatusSet: Events.synced({
+    name: 'v1.GitHubBugStatusSet',
+    schema: Schema.Struct({
+      commentId: Schema.String,
+      status: Schema.String,
+      manual: Schema.Boolean,
+    }),
+  }),
 }
 
 // ─── Materializers ────────────────────────────────────────────────────────────
@@ -335,20 +358,33 @@ const githubMaterializers = State.SQLite.materializers(githubEvents, {
     const currentIds = query(githubTables.pullRequests.select('id')) as readonly string[]
     const staleIds = currentIds.filter((id) => !newIds.has(id))
 
+    const existingBugRows = query(githubTables.bugs.select()) as BugRow[]
+    const manualStatusByCommentId = new Map<string, string>()
+    for (const r of existingBugRows) {
+      if (r.manualStatus) manualStatusByCommentId.set(r.id, r.status)
+    }
+
     const detectedBugs = data.pullRequestRows.flatMap((row) => {
       const comments = JSON.parse(row.commentsJson) as GithubPullRequestComment[]
-      return detectBugsInComments(row.id, comments).map((bug) => ({
-        id: bug.commentId,
-        prId: bug.prId,
-        commentId: bug.commentId,
-        severity: bug.severity,
-        title: bug.title,
-        suggestedFix: bug.suggestedFix,
-        aiPrompt: bug.aiPrompt,
-        affectedLocationsJson: JSON.stringify(bug.affectedLocations),
-        referenceId: bug.referenceId,
-        detectedAt: bug.detectedAt,
-      }))
+      return detectBugsInComments(row.id, comments).map((bug) => {
+        const locked = manualStatusByCommentId.get(bug.commentId)
+        const status = locked !== undefined ? locked : bug.status
+        const manualStatus = locked !== undefined
+        return {
+          id: bug.commentId,
+          prId: bug.prId,
+          commentId: bug.commentId,
+          severity: bug.severity,
+          status,
+          manualStatus,
+          title: bug.title,
+          suggestedFix: bug.suggestedFix,
+          aiPrompt: bug.aiPrompt,
+          affectedLocationsJson: JSON.stringify(bug.affectedLocations),
+          referenceId: bug.referenceId,
+          detectedAt: bug.detectedAt,
+        }
+      })
     })
 
     return [
@@ -408,6 +444,9 @@ const githubMaterializers = State.SQLite.materializers(githubEvents, {
     githubTables.settings
       .insert({ id: 'singleton', settingsJson })
       .onConflict('id', 'replace'),
+
+  'v1.GitHubBugStatusSet': ({ commentId, status, manual }) =>
+    githubTables.bugs.update({ status, manualStatus: manual }).where({ id: commentId }),
 })
 
 // ─── Schema ───────────────────────────────────────────────────────────────────

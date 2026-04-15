@@ -14,6 +14,7 @@ import {
 import {
   DEFAULT_GITHUB_SETTINGS,
   EMPTY_GITHUB_SNAPSHOT,
+  type BugStatus,
   type GithubPullRequest,
   type GithubRepository,
   type GithubSettings,
@@ -28,7 +29,10 @@ import {
 const GITHUB_CHANNELS = {
   snapshot: 'github:snapshot',
   changed: 'github:changed',
+  setBugStatus: 'github:set-bug-status',
 } as const
+
+const BUG_STATUS_ALL: BugStatus[] = ['todo', 'resolved', 'ignored', 'in-progress']
 
 const STORE_ID = 'github'
 
@@ -196,6 +200,21 @@ export class GithubStoreService {
     this.flushGithubSnapshot()
   }
 
+  /**
+   * User-set bug status (or clear manual override so the next sync uses GitHub-derived status).
+   */
+  commitBugStatusSet(payload: { commentId: string; status: BugStatus; manual: boolean }): void {
+    if (!BUG_STATUS_ALL.includes(payload.status)) return
+    this.requireStore().commit(
+      githubEvents.githubBugStatusSet({
+        commentId: payload.commentId,
+        status: payload.status,
+        manual: payload.manual,
+      }),
+    )
+    this.flushGithubSnapshot()
+  }
+
   // ─── Lifecycle ───────────────────────────────────────────────────────────────
 
   async shutdown(): Promise<void> {
@@ -274,12 +293,23 @@ export class GithubStoreService {
     if (this.handlersRegistered) return
     this.handlersRegistered = true
     ipcMain.handle(GITHUB_CHANNELS.snapshot, () => this.getSnapshot())
+    ipcMain.handle(
+      GITHUB_CHANNELS.setBugStatus,
+      (
+        _event,
+        payload: { commentId: string; status: BugStatus; manual: boolean },
+      ): GithubSnapshot => {
+        this.commitBugStatusSet(payload)
+        return this.getSnapshot()
+      },
+    )
   }
 
   private unregisterIpcHandlers(): void {
     if (!this.handlersRegistered) return
     this.handlersRegistered = false
     ipcMain.removeHandler(GITHUB_CHANNELS.snapshot)
+    ipcMain.removeHandler(GITHUB_CHANNELS.setBugStatus)
   }
 
   private requireStore(): Store<typeof githubSchema> {

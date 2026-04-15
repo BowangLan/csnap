@@ -3,6 +3,7 @@ import { electronAPI } from '@electron-toolkit/preload'
 import { TODO_CHANNELS, REPO_STATUS_CHANNELS } from '../shared/livestore/channels'
 import {
   DEFAULT_GITHUB_SETTINGS,
+  type BugStatus,
   type GithubAccount,
   type GithubSettings,
   type GithubSnapshot,
@@ -22,6 +23,7 @@ const GITHUB_CHANNELS = {
   changed: 'github:changed',
   refresh: 'github:refresh',
   updateSettings: 'github:update-settings',
+  setBugStatus: 'github:set-bug-status',
   listAccounts: 'github:list-accounts',
   switchAccount: 'github:switch-account',
   playSound: 'github:play-sound',
@@ -160,6 +162,15 @@ const api = {
         GITHUB_CHANNELS.updateSettings,
         partial,
       )) as GithubSnapshot
+      setGithubSnapshotDeferred(nextSnapshot)
+      return nextSnapshot
+    },
+    setBugStatus: async (commentId: string, status: BugStatus, manual: boolean) => {
+      const nextSnapshot = (await ipcRenderer.invoke(GITHUB_CHANNELS.setBugStatus, {
+        commentId,
+        status,
+        manual,
+      })) as GithubSnapshot
       setGithubSnapshotDeferred(nextSnapshot)
       return nextSnapshot
     },

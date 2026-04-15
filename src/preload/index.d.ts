@@ -1,5 +1,6 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
 import type {
+  BugStatus,
   GithubAccount,
   GithubSettings,
   GithubSnapshot,
@@ -36,6 +37,11 @@ declare global {
         subscribe: (listener: (snapshot: GithubSnapshot) => void) => () => void
         refresh: () => Promise<GithubSnapshot>
         updateSettings: (partial: Partial<GithubSettings>) => Promise<GithubSnapshot>
+        setBugStatus: (
+          commentId: string,
+          status: BugStatus,
+          manual: boolean,
+        ) => Promise<GithubSnapshot>
         listAccounts: () => Promise<GithubAccount[]>
         playSound: (soundName: MacOsNotificationSound) => Promise<void>
         sendTestNotification: (event: PrNotificationEvent) => Promise<void>

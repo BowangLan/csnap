@@ -22,14 +22,18 @@ const SEVERITY_STYLES = {
 
 function BugCallout({ bug }: { bug: PrBug }) {
   const styles = SEVERITY_STYLES[bug.severity]
+  const resolved = bug.status === 'resolved'
+  const shellClass = resolved
+    ? 'border-emerald-500/25 bg-emerald-500/5 text-emerald-900/90 dark:text-emerald-100/90'
+    : styles.badge
 
   return (
-    <div className={`mt-3 rounded-lg border text-xs ${styles.badge} overflow-hidden`}>
+    <div className={`mt-3 rounded-lg border text-xs ${shellClass} overflow-hidden`}>
       <div className="flex items-start gap-2 px-3 py-2.5">
         <Icons.Bug className="mt-px size-3.5 shrink-0" aria-hidden />
         <div className="min-w-0 flex-1 space-y-1.5">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <span className="font-semibold">Bug detected</span>
+            <span className="font-semibold">{resolved ? 'Bug resolved' : 'Bug detected'}</span>
             <span className={`inline-flex items-center rounded border px-1.5 py-0.5 font-mono text-[10px] font-medium leading-none ${styles.badge}`}>
               {bug.severity}
             </span>
@@ -38,7 +42,11 @@ function BugCallout({ bug }: { bug: PrBug }) {
             )}
           </div>
 
-          <p className="leading-snug opacity-90">{bug.title}</p>
+          <p
+            className={`leading-snug opacity-90 ${resolved ? 'line-through decoration-emerald-700/40 dark:decoration-emerald-300/40' : ''}`}
+          >
+            {bug.title}
+          </p>
 
           {bug.suggestedFix && (
             <details className="group">
@@ -110,11 +118,21 @@ function CommentCard({ item, bug }: { item: GithubPullRequestComment; bug?: PrBu
             <div className="flex shrink-0 items-center gap-2">
               {bug && (
                 <span
-                  className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-medium ${SEVERITY_STYLES[bug.severity].badge}`}
-                  title={`Bug detected — ${bug.severity} severity`}
+                  className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-medium ${
+                    bug.status === 'resolved'
+                      ? 'border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400'
+                      : SEVERITY_STYLES[bug.severity].badge
+                  }`}
+                  title={
+                    bug.statusIsManual
+                      ? `Pinned status — ${bug.status} (${bug.severity})`
+                      : bug.status === 'resolved'
+                        ? `Resolved — was ${bug.severity}`
+                        : `Bug detected — ${bug.severity} severity`
+                  }
                 >
                   <Icons.Bug className="size-2.5" aria-hidden />
-                  Bug
+                  {bug.status === 'resolved' ? 'Resolved' : 'Bug'}
                 </span>
               )}
               <a

@@ -84,12 +84,22 @@ export interface GithubPullRequest {
 
 export type BugSeverity = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL' | 'UNKNOWN'
 
+/** Tracked bug workflow; `resolved` is inferred from comment body / GitHub state on sync. */
+export type BugStatus = 'todo' | 'resolved' | 'ignored' | 'in-progress'
+
 export interface PrBug {
   /** Stable ID — equals the source comment's ID (one bug per comment). */
   id: string
   prId: string
   commentId: string
   severity: BugSeverity
+  /** Default `todo`; set to `resolved` when the synced comment indicates resolution. */
+  status: BugStatus
+  /**
+   * When true, `status` was set in the app and is kept across GitHub syncs until
+   * the user chooses “Follow GitHub” again.
+   */
+  statusIsManual: boolean
   title: string
   suggestedFix: string | null
   aiPrompt: string | null

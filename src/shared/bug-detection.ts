@@ -1,4 +1,4 @@
-import type { GithubPullRequestComment } from './github'
+import type { BugStatus, GithubPullRequestComment } from './github'
 
 export type BugSeverity = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL' | 'UNKNOWN'
 
@@ -6,6 +6,7 @@ export interface DetectedBug {
   commentId: string
   prId: string
   severity: BugSeverity
+  status: BugStatus
   title: string
   suggestedFix: string | null
   aiPrompt: string | null
@@ -62,6 +63,41 @@ function parseReferenceId(body: string): string | null {
   return null
 }
 
+/**
+ * Markdown line often appended when fixed, e.g.
+ * *Resolved in [`042069c`](https://github.com/org/repo/commit/abc...)*
+ * Require `/commit/` in the URL so generic links do not flip status.
+ */
+function hasResolvedInCommitLink(body: string): boolean {
+  if (/\bResolved in\s*\[[^\]]+\]\([^)]*\/commit\/[^)]*\)/i.test(body)) return true
+  if (/Resolved in\s*<a[^>]+href="[^"]*\/commit\/[^"]*"/i.test(body)) return true
+  return false
+}
+
+/**
+ * Infer resolution from bug-prediction comment HTML/markdown and GitHub metadata.
+ * Authors can mark resolved with `<!-- BUG_RESOLVED -->`, `<sub>Status: RESOLVED</sub>`,
+ * or *Resolved in [`abc123`](https://github.com/.../commit/...)* after a fix.
+ */
+export function inferBugStatusFromComment(comment: GithubPullRequestComment): BugStatus {
+  const body = comment.body
+  if (/<!--\s*BUG_RESOLVED\s*-->/i.test(body)) return 'resolved'
+  if (/<!--\s*BUG_STATUS:\s*resolved\s*-->/i.test(body)) return 'resolved'
+  if (/<sub>Status:\s*(RESOLVED|FIXED|DONE|CLOSED)<\/sub>/i.test(body)) return 'resolved'
+  if (/\*\*Status:\*\*\s*(resolved|fixed|done|closed)\b/i.test(body)) return 'resolved'
+  if (/^\s*✅\s*\*?\*?(?:Resolved|Fixed|Done)\b/im.test(body)) return 'resolved'
+  if (hasResolvedInCommitLink(body)) return 'resolved'
+
+  if (
+    comment.isMinimized &&
+    /\b(outdated|resolved|addressed|fixed)\b/i.test(comment.minimizedReason ?? '')
+  ) {
+    return 'resolved'
+  }
+
+  return 'todo'
+}
+
 export function detectBugsInComments(
   prId: string,
   comments: GithubPullRequestComment[],
@@ -72,6 +108,7 @@ export function detectBugsInComments(
       commentId: c.id,
       prId,
       severity: parseSeverity(c.body),
+      status: inferBugStatusFromComment(c),
       title: parseTitle(c.body),
       suggestedFix: parseSuggestedFix(c.body),
       aiPrompt: parseAiPrompt(c.body),

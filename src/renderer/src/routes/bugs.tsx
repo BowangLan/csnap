@@ -4,6 +4,14 @@ import { ExternalLink, MapPin } from 'lucide-react'
 import { Icons } from '@renderer/components/icons'
 import { useGithubSnapshot } from '@renderer/hooks/use-github-snapshot'
 import { Badge } from '@renderer/components/ui/badge'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectSeparator,
+  SelectTrigger,
+  SelectValue,
+} from '@renderer/components/ui/select'
 import { Skeleton } from '@renderer/components/ui/skeleton'
 import {
   Table,
@@ -13,18 +21,19 @@ import {
   TableHeader,
   TableRow,
 } from '@renderer/components/ui/table'
-import type { PrBug } from '../../../shared/github'
+import { inferBugStatusFromComment } from '../../../shared/bug-detection'
+import type { BugStatus, GithubPullRequest, PrBug } from '../../../shared/github'
 
 export const Route = createFileRoute('/bugs')({
   component: BugsPage,
 })
 
 const SEVERITY_STYLES: Record<PrBug['severity'], string> = {
-  LOW:      'bg-blue-500/10 text-blue-600 border-blue-500/20 dark:text-blue-400',
-  MEDIUM:   'bg-amber-500/10 text-amber-600 border-amber-500/20 dark:text-amber-400',
-  HIGH:     'bg-orange-500/10 text-orange-600 border-orange-500/20 dark:text-orange-400',
+  LOW: 'bg-blue-500/10 text-blue-600 border-blue-500/20 dark:text-blue-400',
+  MEDIUM: 'bg-amber-500/10 text-amber-600 border-amber-500/20 dark:text-amber-400',
+  HIGH: 'bg-orange-500/10 text-orange-600 border-orange-500/20 dark:text-orange-400',
   CRITICAL: 'bg-red-500/10 text-red-600 border-red-500/20 dark:text-red-400',
-  UNKNOWN:  'bg-muted text-muted-foreground border-border',
+  UNKNOWN: 'bg-muted text-muted-foreground border-border',
 }
 
 const SEVERITY_ORDER: Record<PrBug['severity'], number> = {
@@ -34,6 +43,16 @@ const SEVERITY_ORDER: Record<PrBug['severity'], number> = {
   LOW: 3,
   UNKNOWN: 4,
 }
+
+const STATUS_ORDER: Record<BugStatus, number> = {
+  todo: 0,
+  resolved: 1,
+  ignored: 2,
+  'in-progress': 3,
+}
+
+/** Select value when status follows GitHub-derived detection (not pinned). */
+const STATUS_FOLLOW_GITHUB = '__github__'
 
 function SeverityBadge({ severity }: { severity: PrBug['severity'] }) {
   return (
@@ -45,12 +64,63 @@ function SeverityBadge({ severity }: { severity: PrBug['severity'] }) {
   )
 }
 
+function statusLabel(status: BugStatus): string {
+  switch (status) {
+    case 'resolved':
+      return 'Resolved'
+    case 'ignored':
+      return 'Ignored'
+    case 'in-progress':
+      return 'In progress'
+    default:
+      return 'To do'
+  }
+}
+
+const MANUAL_STATUS_VALUES: BugStatus[] = ['todo', 'in-progress', 'resolved', 'ignored']
+
+function BugStatusSelect({ bug, pr }: { bug: PrBug; pr: GithubPullRequest | undefined }) {
+  const selectValue = bug.statusIsManual ? bug.status : STATUS_FOLLOW_GITHUB
+
+  const applyChange = (value: string) => {
+    if (value === STATUS_FOLLOW_GITHUB) {
+      const comment = pr?.comments.find((c) => c.id === bug.commentId)
+      const next = comment ? inferBugStatusFromComment(comment) : bug.status
+      void window.api.github.setBugStatus(bug.commentId, next, false)
+      return
+    }
+    void window.api.github.setBugStatus(bug.commentId, value as BugStatus, true)
+  }
+
+  return (
+    <Select value={selectValue} onValueChange={applyChange}>
+      <SelectTrigger size="sm" className="h-8 w-[min(100%,12.5rem)] text-[11px]">
+        <SelectValue>
+          {bug.statusIsManual
+            ? `${statusLabel(bug.status)} · pinned`
+            : `${statusLabel(bug.status)} · GitHub`}
+        </SelectValue>
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value={STATUS_FOLLOW_GITHUB}>Match GitHub (comment)</SelectItem>
+        <SelectSeparator />
+        {MANUAL_STATUS_VALUES.map((s) => (
+          <SelectItem key={s} value={s}>
+            {statusLabel(s)} (manual)
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  )
+}
+
 function BugsTableSkeleton() {
   return (
     <div className="divide-y">
       {Array.from({ length: 4 }).map((_, i) => (
         <div key={i} className="flex items-center gap-4 px-3 py-3.5">
           <Skeleton className="h-4 w-16" />
+          <Skeleton className="h-4 w-14" />
           <div className="flex-1 space-y-1.5">
             <Skeleton className="h-4 w-72 max-w-full" />
             <Skeleton className="h-3 w-44 max-w-full" />
@@ -67,9 +137,11 @@ function BugsPage() {
   const snapshot = useGithubSnapshot()
   const isInitialLoading = snapshot.sync.isRefreshing && snapshot.sync.lastRefreshedAt === null
 
-  const bugs = [...snapshot.bugs].sort(
-    (a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity],
-  )
+  const bugs = [...snapshot.bugs].sort((a, b) => {
+    const byStatus = STATUS_ORDER[a.status] - STATUS_ORDER[b.status]
+    if (byStatus !== 0) return byStatus
+    return SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]
+  })
 
   const prById = new Map(snapshot.pullRequests.map((pr) => [pr.id, pr]))
 
@@ -99,6 +171,7 @@ function BugsPage() {
           <TableHeader>
             <TableRow>
               <TableHead className="w-24">Severity</TableHead>
+              <TableHead className="w-52 min-w-44">Status</TableHead>
               <TableHead>Bug</TableHead>
               <TableHead>Pull Request</TableHead>
               <TableHead>Affected</TableHead>
@@ -116,8 +189,16 @@ function BugsPage() {
                   </TableCell>
 
                   <TableCell>
+                    <BugStatusSelect bug={bug} pr={pr} />
+                  </TableCell>
+
+                  <TableCell>
                     <div className="flex flex-col gap-1">
-                      <span className="text-sm font-medium leading-snug">{bug.title}</span>
+                      <span
+                        className={`text-sm font-medium leading-snug ${bug.status === 'resolved' ? 'text-muted-foreground line-through decoration-muted-foreground/50' : ''}`}
+                      >
+                        {bug.title}
+                      </span>
                       {bug.referenceId && (
                         <span className="font-mono text-[10px] text-muted-foreground">
                           ref {bug.referenceId}
