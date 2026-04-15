@@ -1,4 +1,5 @@
 import { FolderGit2, GitPullRequest, Home, Settings } from "lucide-react"
+import { Icons } from "@renderer/components/icons"
 import { Link, useRouterState } from "@tanstack/react-router"
 import { SidebarAccountsMenu } from "@renderer/components/SidebarAccountsMenu"
 import {
@@ -31,6 +32,11 @@ const items = [
     title: "PRs",
     url: "/prs",
     icon: GitPullRequest,
+  },
+  {
+    title: "Bugs",
+    url: "/bugs",
+    icon: Icons.Bug,
   },
   {
     title: "Settings",

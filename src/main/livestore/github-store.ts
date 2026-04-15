@@ -8,6 +8,7 @@ import {
   githubTables,
   prToRow,
   rowToPr,
+  bugRowToPrBug,
   parseStoredSettings,
 } from '../../shared/livestore/github-schema'
 import {
@@ -19,6 +20,7 @@ import {
   type GithubSnapshot,
   type GithubSyncState,
   type GithubAuthStatus,
+  type PrBug,
 } from '../../shared/github'
 
 // ─── IPC channels (duplicated from github-sync-service to avoid circular dep) ─
@@ -60,6 +62,11 @@ const settingsRow$ = queryDb(
   { label: 'githubSettings' },
 )
 
+const bugs$ = queryDb(githubTables.bugs, {
+  label: 'prBugs',
+  map: (rows) => rows.map(bugRowToPrBug),
+})
+
 // ─── Service ──────────────────────────────────────────────────────────────────
 
 /**
@@ -79,7 +86,6 @@ const settingsRow$ = queryDb(
 export class GithubStoreService {
   private store: Store<typeof githubSchema> | null = null
   private snapshot: GithubSnapshot = EMPTY_GITHUB_SNAPSHOT
-  private unsubs: Array<() => void> = []
   private handlersRegistered = false
 
   async init(): Promise<void> {
@@ -101,29 +107,9 @@ export class GithubStoreService {
 
     this.rebuildSnapshot()
 
-    // Subscribe to every live query that contributes to the snapshot.
-    // All four tables are typically updated in a single `githubDataSynced`
-    // event commit (one SQLite transaction), so we debounce the broadcast
-    // to avoid redundant renders.
-    let rebuildScheduled = false
-    const scheduleRebuild = () => {
-      if (rebuildScheduled) return
-      rebuildScheduled = true
-      queueMicrotask(() => {
-        rebuildScheduled = false
-        this.rebuildSnapshot()
-        this.broadcastSnapshot()
-      })
-    }
-
-    const store = this.requireStore()
-    this.unsubs = [
-      store.subscribe(pullRequests$, { onUpdate: scheduleRebuild }),
-      store.subscribe(repositories$, { onUpdate: scheduleRebuild }),
-      store.subscribe(syncState$, { onUpdate: scheduleRebuild }),
-      store.subscribe(authState$, { onUpdate: scheduleRebuild }),
-      store.subscribe(settingsRow$, { onUpdate: scheduleRebuild }),
-    ]
+    // Snapshot + IPC broadcast run synchronously in each `commit*` helper after
+    // `store.commit` — not via subscribe microtasks — so `getSnapshot()` and
+    // `github:changed` always match materialized rows (including `prBugs`).
 
     this.registerIpcHandlers()
   }
@@ -158,6 +144,7 @@ export class GithubStoreService {
    */
   commitSyncStarted(): void {
     this.requireStore().commit(githubEvents.githubSyncStarted({}))
+    this.flushGithubSnapshot()
   }
 
   /**
@@ -182,6 +169,7 @@ export class GithubStoreService {
         lastUpdateDetectedAt: data.lastUpdateDetectedAt ?? null,
       }),
     )
+    this.flushGithubSnapshot()
   }
 
   /**
@@ -195,6 +183,7 @@ export class GithubStoreService {
         activeLogin: data.auth.activeLogin,
       }),
     )
+    this.flushGithubSnapshot()
   }
 
   /**
@@ -204,14 +193,13 @@ export class GithubStoreService {
     this.requireStore().commit(
       githubEvents.githubSettingsUpdated({ settingsJson: JSON.stringify(settings) }),
     )
+    this.flushGithubSnapshot()
   }
 
   // ─── Lifecycle ───────────────────────────────────────────────────────────────
 
   async shutdown(): Promise<void> {
     this.unregisterIpcHandlers()
-    for (const unsub of this.unsubs) unsub()
-    this.unsubs = []
 
     if (!this.store) return
     await this.store.shutdown()
@@ -227,6 +215,11 @@ export class GithubStoreService {
 
   // ─── Private ─────────────────────────────────────────────────────────────────
 
+  private flushGithubSnapshot(): void {
+    this.rebuildSnapshot()
+    this.broadcastSnapshot()
+  }
+
   private rebuildSnapshot(): void {
     const store = this.requireStore()
 
@@ -235,6 +228,7 @@ export class GithubStoreService {
     const syncRow = store.query(syncState$)
     const authRow = store.query(authState$)
     const settingsStoredRow = store.query(settingsRow$)
+    const bugs: PrBug[] = store.query(bugs$)
 
     const sync: GithubSyncState = syncRow
       ? {
@@ -269,6 +263,7 @@ export class GithubStoreService {
       auth,
       repositories,
       pullRequests,
+      bugs,
       settings,
       sync,
       localRepoStatuses: this.snapshot.localRepoStatuses,

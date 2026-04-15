@@ -38,6 +38,7 @@ let githubSnapshot: GithubSnapshot = {
   },
   repositories: [],
   pullRequests: [],
+  bugs: [],
   settings: DEFAULT_GITHUB_SETTINGS,
   sync: {
     isRefreshing: false,
@@ -150,6 +151,7 @@ const api = {
     },
     refresh: async () => {
       const nextSnapshot = (await ipcRenderer.invoke(GITHUB_CHANNELS.refresh)) as GithubSnapshot
+      // Main process flushes snapshot after commit; safe to apply (see GithubStoreService).
       setGithubSnapshotDeferred(nextSnapshot)
       return nextSnapshot
     },

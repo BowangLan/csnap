@@ -16,12 +16,28 @@ export interface GithubPullRequestReviewer {
   state: string
 }
 
+export interface GithubPullRequestReaction {
+  content: string
+  count: number
+}
+
 export interface GithubPullRequestComment {
   id: string
   url: string
   authorLogin: string | null
+  authorAvatarUrl: string | null
+  authorAssociation: string
   body: string
   createdAt: number
+  updatedAt: number
+  isMinimized: boolean
+  minimizedReason: string | null
+  reactionGroups: GithubPullRequestReaction[]
+  /**
+   * When set, this entry is an inline **pull request review** comment (diff),
+   * not a conversation issue comment. GitHub exposes these under `reviewThreads`.
+   */
+  diffPath?: string | null
 }
 
 export interface GithubPullRequestCommit {
@@ -51,7 +67,7 @@ export interface GithubPullRequest {
   deletions: number
   changedFiles: number
   commentsCount: number
-  /** Issue comments on the PR (newest batch from sync). */
+  /** Conversation issue comments plus inline diff review comments from `reviewThreads` (merged, chronological). */
   comments: GithubPullRequestComment[]
   commitsCount: number
   /** Git commits on the PR branch (recent batch from sync, newest first). */
@@ -64,6 +80,23 @@ export interface GithubPullRequest {
   reviewers?: GithubPullRequestReviewer[]
   ciRollupState: string | null
   ciStatuses: GithubPullRequestCiStatus[]
+}
+
+export type BugSeverity = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL' | 'UNKNOWN'
+
+export interface PrBug {
+  /** Stable ID — equals the source comment's ID (one bug per comment). */
+  id: string
+  prId: string
+  commentId: string
+  severity: BugSeverity
+  title: string
+  suggestedFix: string | null
+  aiPrompt: string | null
+  affectedLocations: string[]
+  referenceId: string | null
+  /** Unix ms — matches the source GitHub comment's `createdAt`. */
+  detectedAt: number
 }
 
 export interface GithubPullRequestCiStatus {
@@ -159,6 +192,7 @@ export interface GithubSnapshot {
   auth: GithubAuthStatus
   repositories: GithubRepository[]
   pullRequests: GithubPullRequest[]
+  bugs: PrBug[]
   settings: GithubSettings
   sync: GithubSyncState
   localRepoStatuses: Record<string, LocalRepoGitStatus>
@@ -188,6 +222,7 @@ export const EMPTY_GITHUB_SNAPSHOT: GithubSnapshot = {
   },
   repositories: [],
   pullRequests: [],
+  bugs: [],
   settings: DEFAULT_GITHUB_SETTINGS,
   sync: {
     isRefreshing: false,

@@ -4,6 +4,7 @@ import { Avatar, AvatarFallback } from '@renderer/components/ui/avatar'
 import { Button } from '@renderer/components/ui/button'
 import type { GithubPullRequest } from '../../../../../shared/github'
 import { initials } from './pr-detail-utils'
+import { Icons } from '@renderer/components/icons'
 
 export function PrDetailHeader({ pr }: { pr: GithubPullRequest }) {
   const repoLabel = pr.repositoryNameWithOwner.split('/')[1] ?? pr.repositoryNameWithOwner
@@ -22,6 +23,12 @@ export function PrDetailHeader({ pr }: { pr: GithubPullRequest }) {
             <a href={pr.url} target="_blank" rel="noreferrer">
               Review changes
               <ExternalLink className="ml-1.5 size-3.5 opacity-70" />
+            </a>
+          </Button>
+          {/* External Link Button */}
+          <Button variant="ghost" size="icon-sm" asChild>
+            <a href={pr.url} target="_blank" rel="noreferrer">
+              <Icons.ExternalLink className="size-4" />
             </a>
           </Button>
           <Button variant="ghost" size="icon-sm" aria-label="More actions">

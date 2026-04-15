@@ -15,6 +15,8 @@ export const Route = createFileRoute('/prs/$prId')({
     const pullRequest = window.api.github
       .getSnapshot()
       .pullRequests.find((candidate) => candidate.id === params.prId)
+
+    console.log('pullRequest', pullRequest)
     return { pullRequest }
   },
   preloadStaleTime: 0,
@@ -44,6 +46,13 @@ function PullRequestDetailPage() {
 
   const hasRunningCi =
     pullRequest?.ciStatuses.some((ci) => normalizeCiState(ci) === 'pending') ?? false
+
+  // Full GitHub sync re-fetches all open PRs and writes them to LiveStore. Run on each
+  // navigation to this detail route so comments/CI/commits match GitHub without waiting
+  // for the background poll or window-focus refresh.
+  React.useEffect(() => {
+    void window.api.github.refresh()
+  }, [prId])
 
   React.useEffect(() => {
     if (!hasRunningCi) return

@@ -1,6 +1,7 @@
-import { FolderGit2, GitCommit, Users, User, MessageSquare, GitBranch, GitPullRequest, Library } from "lucide-react";
+import { Bug, FolderGit2, GitCommit, Users, User, MessageSquare, GitBranch, GitPullRequest, Library, ExternalLink } from "lucide-react";
 
 export const Icons = {
+  Bug: Bug,
   Repo: Library,
   Branch: GitBranch,
   PullRequest: GitPullRequest,
@@ -11,4 +12,5 @@ export const Icons = {
   Repository: FolderGit2,
   RepositoryPrivate: FolderGit2,
   RepositoryPublic: FolderGit2,
+  ExternalLink: ExternalLink,
 }

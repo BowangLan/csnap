@@ -1,8 +1,11 @@
 import { Events, Schema, State, makeSchema, type QueryBuilder } from '@livestore/livestore'
 import type {
   GithubPullRequest,
+  GithubPullRequestComment,
   GithubSettings,
+  PrBug,
 } from '../github'
+import { detectBugsInComments } from '../bug-detection'
 
 // ─── Row types (stored in SQLite) ────────────────────────────────────────────
 
@@ -104,6 +107,36 @@ export function rowToPr(row: PullRequestRow): GithubPullRequest {
   }
 }
 
+// ─── Row types ────────────────────────────────────────────────────────────────
+
+export interface BugRow {
+  id: string
+  prId: string
+  commentId: string
+  severity: string
+  title: string
+  suggestedFix: string | null
+  aiPrompt: string | null
+  affectedLocationsJson: string  // JSON.stringify(string[])
+  referenceId: string | null
+  detectedAt: number
+}
+
+export function bugRowToPrBug(row: BugRow): PrBug {
+  return {
+    id: row.id,
+    prId: row.prId,
+    commentId: row.commentId,
+    severity: row.severity as PrBug['severity'],
+    title: row.title,
+    suggestedFix: row.suggestedFix,
+    aiPrompt: row.aiPrompt,
+    affectedLocations: JSON.parse(row.affectedLocationsJson) as string[],
+    referenceId: row.referenceId,
+    detectedAt: row.detectedAt,
+  }
+}
+
 // ─── Tables ───────────────────────────────────────────────────────────────────
 
 export const githubTables = {
@@ -179,6 +212,22 @@ export const githubTables = {
     columns: {
       id: State.SQLite.text({ primaryKey: true }), // always 'singleton'
       settingsJson: State.SQLite.text(), // JSON.stringify(GithubSettings)
+    },
+  }),
+
+  bugs: State.SQLite.table({
+    name: 'prBugs',
+    columns: {
+      id: State.SQLite.text({ primaryKey: true }),         // equals commentId
+      prId: State.SQLite.text(),
+      commentId: State.SQLite.text(),
+      severity: State.SQLite.text(),
+      title: State.SQLite.text(),
+      suggestedFix: State.SQLite.text({ nullable: true }),
+      aiPrompt: State.SQLite.text({ nullable: true }),
+      affectedLocationsJson: State.SQLite.text(),           // JSON.stringify(string[])
+      referenceId: State.SQLite.text({ nullable: true }),
+      detectedAt: State.SQLite.integer(),
     },
   }),
 }
@@ -286,6 +335,22 @@ const githubMaterializers = State.SQLite.materializers(githubEvents, {
     const currentIds = query(githubTables.pullRequests.select('id')) as readonly string[]
     const staleIds = currentIds.filter((id) => !newIds.has(id))
 
+    const detectedBugs = data.pullRequestRows.flatMap((row) => {
+      const comments = JSON.parse(row.commentsJson) as GithubPullRequestComment[]
+      return detectBugsInComments(row.id, comments).map((bug) => ({
+        id: bug.commentId,
+        prId: bug.prId,
+        commentId: bug.commentId,
+        severity: bug.severity,
+        title: bug.title,
+        suggestedFix: bug.suggestedFix,
+        aiPrompt: bug.aiPrompt,
+        affectedLocationsJson: JSON.stringify(bug.affectedLocations),
+        referenceId: bug.referenceId,
+        detectedAt: bug.detectedAt,
+      }))
+    })
+
     return [
       // Upsert all fetched PRs
       ...data.pullRequestRows.map((row) =>
@@ -293,6 +358,13 @@ const githubMaterializers = State.SQLite.materializers(githubEvents, {
       ),
       // Remove PRs no longer returned by GitHub (closed/merged since last sync)
       ...staleIds.map((id) => githubTables.pullRequests.delete().where({ id })),
+      // Remove bugs belonging to stale PRs
+      ...staleIds.map((prId) => githubTables.bugs.delete().where({ prId })),
+      // Refresh detected bugs: clear existing, insert current
+      githubTables.bugs.delete(),
+      ...detectedBugs.map((bug) =>
+        githubTables.bugs.insert(bug).onConflict('id', 'replace'),
+      ),
       // Upsert repositories
       ...data.repositories.map((repo) =>
         githubTables.repositories.insert(repo).onConflict('id', 'replace'),
@@ -323,10 +395,11 @@ const githubMaterializers = State.SQLite.materializers(githubEvents, {
         .insert({ id: 'singleton', isAuthenticated: data.isAuthenticated, activeLogin: data.activeLogin })
         .onConflict('id', 'replace'),
     ]
-    // Clear stale PR/repo data when no longer authenticated.
+    // Clear stale PR/repo/bug data when no longer authenticated.
     if (!data.isAuthenticated) {
       ops.push(githubTables.pullRequests.delete())
       ops.push(githubTables.repositories.delete())
+      ops.push(githubTables.bugs.delete())
     }
     return ops
   },

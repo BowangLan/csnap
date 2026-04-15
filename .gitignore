@@ -7,3 +7,5 @@ out
 **/codedb.snapshot
 
 .claude/
+
+tmp/

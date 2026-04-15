@@ -59,6 +59,24 @@ const REFRESH_INTERVAL_MIN_SECONDS = 15
 const REFRESH_INTERVAL_MAX_SECONDS = 3600
 const POLL_INTERVAL_SECONDS = 30
 const PR_SEARCH_LIMIT = 100
+/** GitHub caps `first`/`last` on IssueCommentConnection; paginate beyond this. */
+const ISSUE_COMMENTS_PAGE_SIZE = 100
+const MAX_ISSUE_COMMENT_PAGES = 500
+/**
+ * Nested `search(first: prLimit) × reviewThreads × thread.comments` must stay under
+ * GitHub's node budget (~500k theoretical nodes) or the API returns `MAX_NODE_LIMIT_EXCEEDED`
+ * (e.g. prLimit=100 with 100×100×100 on review threads was rejected).
+ */
+const REVIEW_THREADS_PAGE_SIZE = 50
+const MAX_REVIEW_THREAD_ROOT_PAGES = 200
+/** Replies inside each review thread. */
+const REVIEW_THREAD_COMMENTS_PAGE_SIZE = 50
+const MAX_REVIEW_THREAD_COMMENT_PAGES = 200
+
+/** `commitHistory: commits(last: …)` in the batched PR search query. */
+const PULL_REQUEST_QUERY_COMMITS_LAST = 50
+/** `statusCheckRollup.contexts(first: …)` on the head commit. */
+const PULL_REQUEST_QUERY_CI_CONTEXTS_FIRST = 100
 
 // Lightweight query (~1-2 points) for change detection.
 // Returns only the fields needed to decide whether a full fetch is warranted.
@@ -123,19 +141,70 @@ const PULL_REQUEST_QUERY = `
           additions
           deletions
           changedFiles
-          comments(last: 50) {
+          comments(first: ${ISSUE_COMMENTS_PAGE_SIZE}) {
             totalCount
+            pageInfo {
+              hasNextPage
+              endCursor
+            }
             nodes {
               id
               url
               body
               createdAt
+              updatedAt
+              isMinimized
+              minimizedReason
+              authorAssociation
               author {
                 login
+                avatarUrl
+              }
+              reactionGroups {
+                content
+                users {
+                  totalCount
+                }
               }
             }
           }
-          commitHistory: commits(last: 50) {
+          reviewThreads(first: ${REVIEW_THREADS_PAGE_SIZE}) {
+            totalCount
+            pageInfo {
+              hasNextPage
+              endCursor
+            }
+            nodes {
+              id
+              comments(first: ${REVIEW_THREAD_COMMENTS_PAGE_SIZE}) {
+                totalCount
+                pageInfo {
+                  hasNextPage
+                  endCursor
+                }
+                nodes {
+                  id
+                  url
+                  body
+                  createdAt
+                  updatedAt
+                  path
+                  author {
+                    login
+                    avatarUrl
+                  }
+                  authorAssociation
+                  reactionGroups {
+                    content
+                    users {
+                      totalCount
+                    }
+                  }
+                }
+              }
+            }
+          }
+          commitHistory: commits(last: ${PULL_REQUEST_QUERY_COMMITS_LAST}) {
             totalCount
             nodes {
               commit {
@@ -157,7 +226,7 @@ const PULL_REQUEST_QUERY = `
               commit {
                 statusCheckRollup {
                   state
-                  contexts(first: 100) {
+                  contexts(first: ${PULL_REQUEST_QUERY_CI_CONTEXTS_FIRST}) {
                     nodes {
                       __typename
                       ... on CheckRun {
@@ -202,8 +271,162 @@ const PULL_REQUEST_QUERY = `
   }
 `
 
+/** Paginated fetch for PR issue comments when totalCount > one page. */
+const PR_ISSUE_COMMENTS_PAGE_QUERY = `
+  query($prId: ID!, $after: String!) {
+    node(id: $prId) {
+      ... on PullRequest {
+        comments(first: ${ISSUE_COMMENTS_PAGE_SIZE}, after: $after) {
+          pageInfo {
+            hasNextPage
+            endCursor
+          }
+          nodes {
+            id
+            url
+            body
+            createdAt
+            updatedAt
+            isMinimized
+            minimizedReason
+            authorAssociation
+            author {
+              login
+              avatarUrl
+            }
+            reactionGroups {
+              content
+              users {
+                totalCount
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+`
+
+/** Paginate `PullRequest.reviewThreads` when there are more than one page of threads. */
+const PR_REVIEW_THREADS_PAGE_QUERY = `
+  query($prId: ID!, $after: String!) {
+    node(id: $prId) {
+      ... on PullRequest {
+        reviewThreads(first: ${REVIEW_THREADS_PAGE_SIZE}, after: $after) {
+          pageInfo {
+            hasNextPage
+            endCursor
+          }
+          nodes {
+            id
+            comments(first: ${REVIEW_THREAD_COMMENTS_PAGE_SIZE}) {
+              totalCount
+              pageInfo {
+                hasNextPage
+                endCursor
+              }
+              nodes {
+                id
+                url
+                body
+                createdAt
+                updatedAt
+                path
+                author {
+                  login
+                  avatarUrl
+                }
+                authorAssociation
+                reactionGroups {
+                  content
+                  users {
+                    totalCount
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+`
+
+/** Paginate comments inside a single `PullRequestReviewThread`. */
+const PR_REVIEW_THREAD_COMMENTS_PAGE_QUERY = `
+  query($threadId: ID!, $after: String!) {
+    node(id: $threadId) {
+      ... on PullRequestReviewThread {
+        comments(first: ${REVIEW_THREAD_COMMENTS_PAGE_SIZE}, after: $after) {
+          pageInfo {
+            hasNextPage
+            endCursor
+          }
+          nodes {
+            id
+            url
+            body
+            createdAt
+            updatedAt
+            path
+            author {
+              login
+              avatarUrl
+            }
+            authorAssociation
+            reactionGroups {
+              content
+              users {
+                totalCount
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+`
+
 interface GhViewerResponse {
   login: string
+}
+
+type GhReviewCommentNode = {
+  id: string
+  url: string
+  body: string | null
+  createdAt: string
+  updatedAt: string
+  path: string
+  author: { login: string; avatarUrl: string } | null
+  authorAssociation: string
+  reactionGroups: Array<{
+    content: string
+    users: { totalCount: number }
+  }>
+}
+
+type GhReviewThreadCommentsConnection = {
+  totalCount: number
+  pageInfo: {
+    hasNextPage: boolean
+    endCursor: string | null
+  }
+  nodes: GhReviewCommentNode[]
+}
+
+type GhReviewThreadNode = {
+  id: string
+  comments: GhReviewThreadCommentsConnection
+}
+
+type GhReviewThreadsConnection = {
+  totalCount: number
+  pageInfo: {
+    hasNextPage: boolean
+    endCursor: string | null
+  }
+  nodes: GhReviewThreadNode[]
 }
 
 interface GhPullRequestNode {
@@ -224,14 +447,27 @@ interface GhPullRequestNode {
   changedFiles: number
   comments: {
     totalCount: number
+    pageInfo: {
+      hasNextPage: boolean
+      endCursor: string | null
+    }
     nodes: Array<{
       id: string
       url: string
       body: string
       createdAt: string
-      author: { login: string } | null
+      updatedAt: string
+      isMinimized: boolean
+      minimizedReason: string | null
+      authorAssociation: string
+      author: { login: string; avatarUrl: string } | null
+      reactionGroups: Array<{
+        content: string
+        users: { totalCount: number }
+      }>
     }>
   }
+  reviewThreads: GhReviewThreadsConnection
   commitHistory: {
     totalCount: number
     nodes: Array<{
@@ -277,6 +513,30 @@ interface GhPullRequestNode {
     pullRequests: {
       totalCount: number
     }
+  }
+}
+
+interface GhCommentsContinuationResponse {
+  data: {
+    node: {
+      comments: Pick<GhPullRequestNode['comments'], 'nodes' | 'pageInfo'>
+    } | null
+  }
+}
+
+interface GhReviewThreadsContinuationResponse {
+  data: {
+    node: {
+      reviewThreads: Pick<GhReviewThreadsConnection, 'nodes' | 'pageInfo'>
+    } | null
+  }
+}
+
+interface GhReviewThreadCommentsContinuationResponse {
+  data: {
+    node: {
+      comments: Pick<GhReviewThreadCommentsConnection, 'nodes' | 'pageInfo'>
+    } | null
   }
 }
 
@@ -691,11 +951,149 @@ export class GithubSyncService {
     }
   }
 
+  /** Fetches remaining pages of issue comments (conversation) when totalCount exceeds one GraphQL page. */
+  private async collectAllIssueCommentNodes(
+    pullRequestNodeId: string,
+    connection: GhPullRequestNode['comments'],
+  ): Promise<GhPullRequestNode['comments']['nodes']> {
+    const nodes: GhPullRequestNode['comments']['nodes'] = [...connection.nodes]
+    let hasNextPage = connection.pageInfo?.hasNextPage ?? false
+    let cursor = connection.pageInfo?.endCursor ?? null
+    for (let i = 0; i < MAX_ISSUE_COMMENT_PAGES && hasNextPage && cursor; i++) {
+      const next = await this.fetchIssueCommentsAfter(pullRequestNodeId, cursor)
+      nodes.push(...next.nodes)
+      hasNextPage = next.pageInfo.hasNextPage
+      cursor = next.pageInfo.endCursor
+    }
+    return nodes
+  }
+
+  private async fetchIssueCommentsAfter(
+    pullRequestNodeId: string,
+    after: string,
+  ): Promise<Pick<GhPullRequestNode['comments'], 'nodes' | 'pageInfo'>> {
+    const result = await this.runGhJson<GhCommentsContinuationResponse>([
+      'api',
+      'graphql',
+      '-f',
+      `query=${PR_ISSUE_COMMENTS_PAGE_QUERY}`,
+      '-F',
+      `prId=${pullRequestNodeId}`,
+      '-F',
+      `after=${after}`,
+    ])
+    const conn = result.data.node?.comments
+    if (!conn) {
+      return {
+        pageInfo: { hasNextPage: false, endCursor: null },
+        nodes: [],
+      }
+    }
+    return conn
+  }
+
+  /** Inline review comments live under `reviewThreads` (diff), not `PullRequest.comments`. */
+  private async collectInlineReviewComments(
+    pullRequestNodeId: string,
+    initialThreads: GhReviewThreadsConnection,
+  ): Promise<GithubPullRequestComment[]> {
+    const threads = await this.collectAllReviewThreadNodes(pullRequestNodeId, initialThreads)
+    const out: GithubPullRequestComment[] = []
+    for (const thread of threads) {
+      const rawNodes = await this.collectAllReviewCommentNodesInThread(thread.id, thread.comments)
+      for (const n of rawNodes) {
+        out.push(mapReviewThreadCommentNode(n))
+      }
+    }
+    return out
+  }
+
+  private async collectAllReviewThreadNodes(
+    pullRequestNodeId: string,
+    initial: GhReviewThreadsConnection,
+  ): Promise<GhReviewThreadNode[]> {
+    const nodes = [...initial.nodes]
+    let hasNextPage = initial.pageInfo?.hasNextPage ?? false
+    let cursor = initial.pageInfo?.endCursor ?? null
+    for (let i = 0; i < MAX_REVIEW_THREAD_ROOT_PAGES && hasNextPage && cursor; i++) {
+      const next = await this.fetchReviewThreadsAfter(pullRequestNodeId, cursor)
+      nodes.push(...next.nodes)
+      hasNextPage = next.pageInfo.hasNextPage
+      cursor = next.pageInfo.endCursor
+    }
+    return nodes
+  }
+
+  private async fetchReviewThreadsAfter(
+    pullRequestNodeId: string,
+    after: string,
+  ): Promise<Pick<GhReviewThreadsConnection, 'nodes' | 'pageInfo'>> {
+    const result = await this.runGhJson<GhReviewThreadsContinuationResponse>([
+      'api',
+      'graphql',
+      '-f',
+      `query=${PR_REVIEW_THREADS_PAGE_QUERY}`,
+      '-F',
+      `prId=${pullRequestNodeId}`,
+      '-F',
+      `after=${after}`,
+    ])
+    const conn = result.data.node?.reviewThreads
+    if (!conn) {
+      return {
+        pageInfo: { hasNextPage: false, endCursor: null },
+        nodes: [],
+      }
+    }
+    return conn
+  }
+
+  private async collectAllReviewCommentNodesInThread(
+    threadId: string,
+    initial: GhReviewThreadCommentsConnection,
+  ): Promise<GhReviewCommentNode[]> {
+    const nodes: GhReviewCommentNode[] = [...initial.nodes]
+    let hasNextPage = initial.pageInfo?.hasNextPage ?? false
+    let cursor = initial.pageInfo?.endCursor ?? null
+    for (let i = 0; i < MAX_REVIEW_THREAD_COMMENT_PAGES && hasNextPage && cursor; i++) {
+      const next = await this.fetchReviewThreadCommentsAfter(threadId, cursor)
+      nodes.push(...next.nodes)
+      hasNextPage = next.pageInfo.hasNextPage
+      cursor = next.pageInfo.endCursor
+    }
+    return nodes
+  }
+
+  private async fetchReviewThreadCommentsAfter(
+    threadId: string,
+    after: string,
+  ): Promise<Pick<GhReviewThreadCommentsConnection, 'nodes' | 'pageInfo'>> {
+    const result = await this.runGhJson<GhReviewThreadCommentsContinuationResponse>([
+      'api',
+      'graphql',
+      '-f',
+      `query=${PR_REVIEW_THREAD_COMMENTS_PAGE_QUERY}`,
+      '-F',
+      `threadId=${threadId}`,
+      '-F',
+      `after=${after}`,
+    ])
+    const conn = result.data.node?.comments
+    if (!conn) {
+      return {
+        pageInfo: { hasNextPage: false, endCursor: null },
+        nodes: [],
+      }
+    }
+    return conn
+  }
+
   private async fetchGithubData(): Promise<{
     repositories: GithubRepository[]
     pullRequests: GithubPullRequest[]
     rateLimit: GhRateLimit
   }> {
+    console.log('[fetchGithubData] called')
     const result = await this.runGhJson<GhGraphqlResponse>([
       'api',
       'graphql',
@@ -706,56 +1104,77 @@ export class GithubSyncService {
     ])
 
     const repositoriesById = new Map<string, GithubRepository>()
-    const pullRequests = result.data.search.nodes
-      .filter((node): node is GhPullRequestNode => Boolean(node?.repository?.id))
-      .map((node) => {
-        const repository: GithubRepository = {
-          id: node.repository.id,
-          name: node.repository.name,
-          nameWithOwner: node.repository.nameWithOwner,
-          url: node.repository.url,
-          isPrivate: node.repository.isPrivate,
-          defaultBranch: node.repository.defaultBranchRef?.name ?? null,
-          updatedAt: toTimestamp(node.repository.updatedAt),
-          pushedAt: toTimestamp(node.repository.pushedAt),
-          openPullRequestCount: node.repository.pullRequests.totalCount,
-        }
+    const rawPrNodes = result.data.search.nodes.filter((node): node is GhPullRequestNode =>
+      Boolean(node?.repository?.id),
+    )
 
-        repositoriesById.set(repository.id, repository)
+    const pullRequests = (
+      await Promise.all(
+        rawPrNodes.map(async (node) => {
+          const commentNodes = await this.collectAllIssueCommentNodes(node.id, node.comments)
+          const issueComments = mapIssueComments(commentNodes)
+          const reviewTimeline = await this.collectInlineReviewComments(node.id, node.reviewThreads)
+          const mergedComments = mergePrCommentTimeline(issueComments, reviewTimeline)
 
-        const ciRollup = node.latestCommit.nodes[0]?.commit.statusCheckRollup ?? null
+          console.log(`[comments:${node.number}] "${node.title}"`, {
+            issueCommentsFetched: issueComments.length,
+            reviewThreadCommentsFetched: reviewTimeline.length,
+            merged: mergedComments.map((c) => ({
+              id: c.id,
+              author: c.authorLogin,
+              diffPath: c.diffPath ?? null,
+              preview: c.body.slice(0, 80).replace(/\n/g, ' '),
+            })),
+          })
 
-        return {
-          id: node.id,
-          repositoryId: node.repository.id,
-          repositoryNameWithOwner: node.repository.nameWithOwner,
-          number: node.number,
-          title: node.title,
-          body: node.body || undefined,
-          url: node.url,
-          state: node.state,
-          isDraft: node.isDraft,
-          reviewDecision: node.reviewDecision,
-          mergeable: node.mergeable,
-          headRefName: node.headRefName ?? '',
-          baseRefName: node.baseRefName || undefined,
-          authorLogin: node.author?.login ?? null,
-          createdAt: toTimestamp(node.createdAt) ?? Date.now(),
-          updatedAt: toTimestamp(node.updatedAt) ?? Date.now(),
-          additions: node.additions,
-          deletions: node.deletions,
-          changedFiles: node.changedFiles,
-          commentsCount: node.comments.totalCount,
-          comments: mapIssueComments(node.comments.nodes),
-          commitsCount: node.commitHistory.totalCount,
-          commits: mapPullRequestCommits(node.commitHistory.nodes),
-          ciRollupState: ciRollup?.state ?? null,
-          ciStatuses: (ciRollup?.contexts.nodes ?? []).map((statusNode, index) =>
-            mapStatusCheckNode(node.id, index, statusNode),
-          ),
-        } satisfies GithubPullRequest
-      })
-      .sort((left, right) => right.updatedAt - left.updatedAt)
+          const repository: GithubRepository = {
+            id: node.repository.id,
+            name: node.repository.name,
+            nameWithOwner: node.repository.nameWithOwner,
+            url: node.repository.url,
+            isPrivate: node.repository.isPrivate,
+            defaultBranch: node.repository.defaultBranchRef?.name ?? null,
+            updatedAt: toTimestamp(node.repository.updatedAt),
+            pushedAt: toTimestamp(node.repository.pushedAt),
+            openPullRequestCount: node.repository.pullRequests.totalCount,
+          }
+
+          repositoriesById.set(repository.id, repository)
+
+          const ciRollup = node.latestCommit.nodes[0]?.commit.statusCheckRollup ?? null
+
+          return {
+            id: node.id,
+            repositoryId: node.repository.id,
+            repositoryNameWithOwner: node.repository.nameWithOwner,
+            number: node.number,
+            title: node.title,
+            body: node.body || undefined,
+            url: node.url,
+            state: node.state,
+            isDraft: node.isDraft,
+            reviewDecision: node.reviewDecision,
+            mergeable: node.mergeable,
+            headRefName: node.headRefName ?? '',
+            baseRefName: node.baseRefName || undefined,
+            authorLogin: node.author?.login ?? null,
+            createdAt: toTimestamp(node.createdAt) ?? Date.now(),
+            updatedAt: toTimestamp(node.updatedAt) ?? Date.now(),
+            additions: node.additions,
+            deletions: node.deletions,
+            changedFiles: node.changedFiles,
+            commentsCount: node.comments.totalCount,
+            comments: mergedComments,
+            commitsCount: node.commitHistory.totalCount,
+            commits: mapPullRequestCommits(node.commitHistory.nodes),
+            ciRollupState: ciRollup?.state ?? null,
+            ciStatuses: (ciRollup?.contexts.nodes ?? []).map((statusNode, index) =>
+              mapStatusCheckNode(node.id, index, statusNode),
+            ),
+          } satisfies GithubPullRequest
+        }),
+      )
+    ).sort((left, right) => right.updatedAt - left.updatedAt)
 
     const repositories = [...repositoriesById.values()].sort((left, right) => {
       const leftUpdated = left.updatedAt ?? 0
@@ -1040,10 +1459,44 @@ function mapIssueComments(
     id: n.id,
     url: n.url,
     authorLogin: n.author?.login ?? null,
+    authorAvatarUrl: n.author?.avatarUrl ?? null,
+    authorAssociation: n.authorAssociation,
     body: n.body ?? '',
     createdAt: toTimestamp(n.createdAt) ?? Date.now(),
+    updatedAt: toTimestamp(n.updatedAt) ?? Date.now(),
+    isMinimized: n.isMinimized,
+    minimizedReason: n.minimizedReason,
+    reactionGroups: n.reactionGroups
+      .filter((rg) => rg.users.totalCount > 0)
+      .map((rg) => ({ content: rg.content, count: rg.users.totalCount })),
   }))
-  return mapped.sort((a, b) => b.createdAt - a.createdAt)
+  return mapped.sort((a, b) => a.createdAt - b.createdAt)
+}
+
+function mapReviewThreadCommentNode(n: GhReviewCommentNode): GithubPullRequestComment {
+  return {
+    id: n.id,
+    url: n.url,
+    authorLogin: n.author?.login ?? null,
+    authorAvatarUrl: n.author?.avatarUrl ?? null,
+    authorAssociation: n.authorAssociation,
+    body: n.body ?? '',
+    createdAt: toTimestamp(n.createdAt) ?? Date.now(),
+    updatedAt: toTimestamp(n.updatedAt) ?? Date.now(),
+    isMinimized: false,
+    minimizedReason: null,
+    reactionGroups: n.reactionGroups
+      .filter((rg) => rg.users.totalCount > 0)
+      .map((rg) => ({ content: rg.content, count: rg.users.totalCount })),
+    diffPath: n.path || null,
+  }
+}
+
+function mergePrCommentTimeline(
+  issue: GithubPullRequestComment[],
+  review: GithubPullRequestComment[],
+): GithubPullRequestComment[] {
+  return [...issue, ...review].sort((a, b) => a.createdAt - b.createdAt)
 }
 
 function mapPullRequestCommits(
