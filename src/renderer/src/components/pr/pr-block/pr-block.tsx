@@ -5,13 +5,13 @@ import { Link } from '@tanstack/react-router'
 import { toast } from 'sonner'
 import { cn } from '@renderer/lib/utils'
 import { deriveCiStatus } from '@renderer/lib/pr-ci'
-import type { GithubPullRequest } from '../../../../../shared/github'
+import type { GithubPullRequest, PrBug } from '../../../../../shared/github'
 import { CopyBranchButton } from './copy-branch-button'
 import { CopyUrlButton } from './copy-url-button'
 import { OpenInBrowserButton } from './open-in-browser-button'
 import { CheckoutBranchButton } from './checkout-branch-button'
 import { Icons } from '@renderer/components/icons'
-import { Badge } from '@renderer/components/ui/badge'
+import { PillButton } from '@renderer/components/ui/pill-button'
 import {
   ContextMenu,
   ContextMenuContent,
@@ -21,6 +21,52 @@ import {
 import { ListItem } from '@renderer/components/ui/list'
 import { useGithubSnapshot } from '@renderer/hooks/use-github-snapshot'
 import { useRepoStatuses } from '@renderer/hooks/use-repo-statuses'
+import { SEVERITY_STYLES } from '../../bugs/bug-block/bug-severity-badge'
+
+const SEVERITY_LEVELS: readonly PrBug['severity'][] = [
+  'CRITICAL',
+  'HIGH',
+  'MEDIUM',
+  'LOW',
+  'UNKNOWN',
+]
+
+function countBugsBySeverity(bugs: PrBug[]): Record<PrBug['severity'], number> {
+  const counts: Record<PrBug['severity'], number> = {
+    CRITICAL: 0,
+    HIGH: 0,
+    MEDIUM: 0,
+    LOW: 0,
+    UNKNOWN: 0,
+  }
+  for (const b of bugs) counts[b.severity]++
+  return counts
+}
+
+function BugSeverityPills({
+  severityCounts,
+  className,
+}: {
+  severityCounts: Record<PrBug['severity'], number>
+  className?: string
+}): JSX.Element | null {
+  const hasAny = SEVERITY_LEVELS.some((sev) => severityCounts[sev] > 0)
+  if (!hasAny) return null
+  return (
+    <span className={cn('inline-flex flex-wrap items-center gap-1 shrink-0 pointer-events-none', className)}>
+      {SEVERITY_LEVELS.map((sev) => {
+        const n = severityCounts[sev]
+        if (n === 0) return null
+        return (
+          <PillButton key={sev} variant="outline" className={cn(SEVERITY_STYLES[sev])}>
+            <Icons.Bug className="size-3.5" />
+            {n}
+          </PillButton>
+        )
+      })}
+    </span>
+  )
+}
 
 const Row = ({
   children,
@@ -52,7 +98,8 @@ export function PullRequestBlock({ pullRequest }: { pullRequest: GithubPullReque
   const hasLocalPath = Boolean(snapshot.settings.localRepoPaths[pullRequest.repositoryNameWithOwner])
   const repoStatus = repoStatuses[pullRequest.repositoryNameWithOwner]
   const isActive = Boolean(repoStatus?.branch && repoStatus.branch === pullRequest.headRefName)
-  const bugCount = snapshot.bugs.filter((b) => b.prId === pullRequest.id && b.status !== 'resolved').length
+  const prBugs = snapshot.bugs.filter((b) => b.prId === pullRequest.id && b.status !== 'resolved')
+  const severityCounts = countBugsBySeverity(prBugs)
 
   return (
     <ListItem
@@ -142,15 +189,7 @@ export function PullRequestBlock({ pullRequest }: { pullRequest: GithubPullReque
       <CopyUrlButton url={pullRequest.url} />
       <OpenInBrowserButton url={pullRequest.url} />
 
-      {bugCount > 0 ? (
-        <Badge
-          variant="destructive"
-          className="relative z-10 pointer-events-none tabular-nums gap-1"
-        >
-          <Icons.Bug className="size-3" />
-          {bugCount}
-        </Badge>
-      ) : null}
+      <BugSeverityPills severityCounts={severityCounts} className="relative z-10 tabular-nums" />
 
       {/* <Row className="relative z-10 ml-auto justify-end gap-2 pointer-events-auto">
         <LinearIssueBadge pr={pullRequest} />
@@ -177,7 +216,8 @@ export function PullRequestBlockRow({ pullRequest }: { pullRequest: GithubPullRe
   const hasLocalPath = Boolean(snapshot.settings.localRepoPaths[pullRequest.repositoryNameWithOwner])
   const repoStatus = repoStatuses[pullRequest.repositoryNameWithOwner]
   const isActive = Boolean(repoStatus?.branch && repoStatus.branch === pullRequest.headRefName)
-  const bugCount = snapshot.bugs.filter((b) => b.prId === pullRequest.id && b.status !== 'resolved').length
+  const prBugsRow = snapshot.bugs.filter((b) => b.prId === pullRequest.id && b.status !== 'resolved')
+  const severityCountsRow = countBugsBySeverity(prBugsRow)
   const branch = pullRequest.headRefName
   const canCheckout = Boolean(hasLocalPath && branch)
 
@@ -251,15 +291,7 @@ export function PullRequestBlockRow({ pullRequest }: { pullRequest: GithubPullRe
           <p className="relative z-10 hidden min-w-0 max-w-[min(100%,20rem)] truncate text-xs text-muted-foreground md:block pointer-events-none">
             {formatDistanceToNow(pullRequest.updatedAt, { addSuffix: true })}
           </p>
-          {bugCount > 0 ? (
-            <Badge
-              variant="destructive"
-              className="relative z-10 pointer-events-none tabular-nums gap-1"
-            >
-              <Icons.Bug className="size-3" />
-              {bugCount}
-            </Badge>
-          ) : null}
+          <BugSeverityPills severityCounts={severityCountsRow} className="relative z-10 tabular-nums" />
         </ListItem>
       </ContextMenuTrigger>
       <ContextMenuContent onCloseAutoFocus={(e) => e.preventDefault()}>

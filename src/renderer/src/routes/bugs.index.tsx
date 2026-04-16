@@ -27,12 +27,12 @@ function BugsPage(): JSX.Element {
   const [sortMode, setSortMode] = useState<BugSortMode>('detected')
   const [nestByPr, setNestByPr] = useState(true)
 
-  const bugs = snapshot.bugs
+  const bugs = snapshot.bugs.filter((b) => b.status !== 'resolved')
   const prById = new Map(snapshot.pullRequests.map((pr) => [pr.id, pr]))
 
   return (
     <div className="flex min-w-0 flex-col gap-2">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border pb-2">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border -mx-2 pl-4 pr-2 pb-2">
         <h1 className="flex items-center gap-2 text-sm font-medium text-foreground">
           <Icons.Bug className="size-4 text-muted-foreground" />
           Detected bugs

@@ -8,11 +8,20 @@ import {
 } from '@renderer/components/ui/select'
 import { inferBugStatusFromComment } from '../../../../../shared/bug-detection'
 import type { BugStatus, GithubPullRequest, PrBug } from '../../../../../shared/github'
+import { PillButton } from '@renderer/components/ui/pill-button'
+import { cn } from '@renderer/lib/utils'
 
 /** Select value when status follows GitHub-derived detection (not pinned). */
 const STATUS_FOLLOW_GITHUB = '__github__'
 
 const MANUAL_STATUS_VALUES: BugStatus[] = ['todo', 'in-progress', 'resolved', 'ignored']
+
+const statusBgColorMap: Record<BugStatus, string> = {
+  'todo': 'bg-blue-500',
+  'in-progress': 'bg-orange-500',
+  'resolved': 'bg-green-500',
+  'ignored': 'bg-muted-foreground'
+}
 
 function statusLabel(status: BugStatus): string {
   switch (status) {
@@ -49,15 +58,19 @@ export function BugStatusSelect({
   return (
     <Select value={selectValue} onValueChange={applyChange}>
       <SelectTrigger
-        size="sm"
-        className="relative z-10 h-8 w-[min(100%,12.5rem)] text-[11px] pointer-events-auto"
-        onPointerDown={(e) => e.stopPropagation()}
+        asChild
       >
-        <SelectValue>
-          {bug.statusIsManual
-            ? `${statusLabel(bug.status)} · pinned`
-            : `${statusLabel(bug.status)} · GitHub`}
-        </SelectValue>
+        <PillButton variant="outline" type="button" className="pointer-events-auto">
+          <div
+            className={cn('size-2 shrink-0 rounded-full', statusBgColorMap[bug.status])}
+            aria-hidden
+          />
+          <SelectValue>
+            {bug.statusIsManual
+              ? `${statusLabel(bug.status)} · pinned`
+              : `${statusLabel(bug.status)} · GitHub`}
+          </SelectValue>
+        </PillButton>
       </SelectTrigger>
       <SelectContent>
         <SelectItem value={STATUS_FOLLOW_GITHUB}>Match GitHub (comment)</SelectItem>
