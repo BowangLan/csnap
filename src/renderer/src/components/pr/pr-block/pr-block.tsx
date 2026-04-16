@@ -1,6 +1,8 @@
 import { formatDistanceToNow } from 'date-fns'
+import { ExternalLink, GitBranch, Link as LinkIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { Link } from '@tanstack/react-router'
+import { toast } from 'sonner'
 import { cn } from '@renderer/lib/utils'
 import { deriveCiStatus } from '@renderer/lib/pr-ci'
 import type { GithubPullRequest } from '../../../../../shared/github'
@@ -10,6 +12,12 @@ import { OpenInBrowserButton } from './open-in-browser-button'
 import { CheckoutBranchButton } from './checkout-branch-button'
 import { Icons } from '@renderer/components/icons'
 import { Badge } from '@renderer/components/ui/badge'
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from '@renderer/components/ui/context-menu'
 import { ListItem } from '@renderer/components/ui/list'
 import { useGithubSnapshot } from '@renderer/hooks/use-github-snapshot'
 import { useRepoStatuses } from '@renderer/hooks/use-repo-statuses'
@@ -170,78 +178,122 @@ export function PullRequestBlockRow({ pullRequest }: { pullRequest: GithubPullRe
   const repoStatus = repoStatuses[pullRequest.repositoryNameWithOwner]
   const isActive = Boolean(repoStatus?.branch && repoStatus.branch === pullRequest.headRefName)
   const bugCount = snapshot.bugs.filter((b) => b.prId === pullRequest.id && b.status !== 'resolved').length
+  const branch = pullRequest.headRefName
+  const canCheckout = Boolean(hasLocalPath && branch)
+
+  async function handleContextCheckout() {
+    if (!branch) return
+    try {
+      await window.api.github.checkoutBranch(pullRequest.repositoryNameWithOwner, branch)
+      toast.success(`Checked out ${branch}`)
+      void window.api.repoStatuses.syncAll()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Checkout failed')
+    }
+  }
+
+  function handleContextCopyUrl() {
+    void navigator.clipboard.writeText(pullRequest.url).then(() => {
+      toast.success('PR URL copied')
+    })
+  }
 
   return (
-    <ListItem
-      className={cn(
-        'group relative gap-x-4',
-        'has-[a[data-transitioning]]:cursor-wait has-[a[data-transitioning]]:opacity-70',
-      )}
-    >
-      <Link
-        to="/prs/$prId"
-        params={{ prId: pullRequest.id }}
-        className="absolute inset-0 z-0 rounded-lg"
-        aria-label={`View pull request ${pullRequest.number}`}
-      />
-
-      {/* Row Item: PR Status */}
-      <div className="flex-none relative">
-        <Icons.PullRequest className="size-4 text-muted-foreground pointer-events-none flex-none" />
-        {ciStatus ? (
-          <span
-            className={cn(
-              'absolute -top-0.5 -right-0.5 size-1.5 rounded-full ring-1 ring-background',
-              CI_DOT_CLASS[ciStatus]
-            )}
-          />
-        ) : null}
-      </div>
-
-      {/* Row Item: PR Number */}
-      <div className="font-normal text-foreground/70 text-sm font-mono min-w-0 flex-none w-8.5">#{pullRequest.number}</div>
-
-      {/* Row Item: Title */}
-      <div
-        className="truncate text-sm font-medium min-w-0 shrink-0 basis-[min(40%,20rem)]"
-        title={`${pullRequest.title} — ${meta}`}
-      >
-        {pullRequest.title}
-      </div>
-      <div className="flex min-w-0 shrink-0 basis-[min(30%,18rem)] overflow-hidden items-center">
-        {pullRequest.headRefName ? (
-          <CopyBranchButton branchName={pullRequest.headRefName} />
-        ) : null}
-      </div>
-
-      <div className='flex-1'></div>
-
-      <p className="relative z-10 hidden min-w-0 max-w-[min(100%,20rem)] truncate text-xs text-muted-foreground md:block pointer-events-none">
-        {formatDistanceToNow(pullRequest.updatedAt, { addSuffix: true })}
-      </p>
-      {bugCount > 0 ? (
-        <Badge
-          variant="destructive"
-          className="relative z-10 pointer-events-none tabular-nums gap-1"
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <ListItem
+          title="Right-click for actions"
+          className={cn(
+            'group relative gap-x-4',
+            'has-[a[data-transitioning]]:cursor-wait has-[a[data-transitioning]]:opacity-70',
+          )}
         >
-          <Icons.Bug className="size-3" />
-          {bugCount}
-        </Badge>
-      ) : null}
+          <Link
+            to="/prs/$prId"
+            params={{ prId: pullRequest.id }}
+            className="absolute inset-0 z-0 rounded-lg"
+            aria-label={`View pull request ${pullRequest.number}`}
+          />
 
-      <div className="shrink-0 flex items-center gap-2">
-        <CheckoutBranchButton
-          nameWithOwner={pullRequest.repositoryNameWithOwner}
-          branch={pullRequest.headRefName}
-          hasLocalPath={hasLocalPath}
-          isActive={isActive}
-        />
+          {/* Row Item: PR Status */}
+          <div className="flex-none relative">
+            <Icons.PullRequest className="size-4 text-muted-foreground pointer-events-none flex-none" />
+            {ciStatus ? (
+              <span
+                className={cn(
+                  'absolute -top-0.5 -right-0.5 size-1.5 rounded-full ring-1 ring-background',
+                  CI_DOT_CLASS[ciStatus]
+                )}
+              />
+            ) : null}
+          </div>
 
-        <div className='overflow-hidden flex-none gap-2 flex items-center'>
-          <CopyUrlButton url={pullRequest.url} />
-          <OpenInBrowserButton url={pullRequest.url} />
-        </div>
-      </div>
-    </ListItem>
+          {/* Row Item: PR Number */}
+          <div className="font-normal text-foreground/70 text-sm font-mono min-w-0 flex-none w-8.5">
+            #{pullRequest.number}
+          </div>
+
+          {/* Row Item: Title */}
+          <div
+            className="truncate text-sm font-medium min-w-0 shrink-0 basis-[min(40%,20rem)]"
+            title={`${pullRequest.title} — ${meta}`}
+          >
+            {pullRequest.title}
+          </div>
+          <div className="flex min-w-0 shrink-0 basis-[min(30%,18rem)] overflow-hidden items-center">
+            {pullRequest.headRefName ? (
+              <CopyBranchButton branchName={pullRequest.headRefName} />
+            ) : null}
+          </div>
+
+          <div className="flex-1" />
+
+          <p className="relative z-10 hidden min-w-0 max-w-[min(100%,20rem)] truncate text-xs text-muted-foreground md:block pointer-events-none">
+            {formatDistanceToNow(pullRequest.updatedAt, { addSuffix: true })}
+          </p>
+          {bugCount > 0 ? (
+            <Badge
+              variant="destructive"
+              className="relative z-10 pointer-events-none tabular-nums gap-1"
+            >
+              <Icons.Bug className="size-3" />
+              {bugCount}
+            </Badge>
+          ) : null}
+        </ListItem>
+      </ContextMenuTrigger>
+      <ContextMenuContent onCloseAutoFocus={(e) => e.preventDefault()}>
+        <ContextMenuItem
+          disabled={!canCheckout}
+          title={
+            isActive
+              ? `On this branch: ${branch ?? ''}`
+              : hasLocalPath
+                ? branch
+                  ? `Checkout branch: ${branch}`
+                  : 'No branch'
+                : `No local path configured for ${pullRequest.repositoryNameWithOwner} — set one in Settings`
+          }
+          onSelect={() => {
+            void handleContextCheckout()
+          }}
+        >
+          <GitBranch />
+          {isActive ? 'On this branch' : 'Checkout branch'}
+        </ContextMenuItem>
+        <ContextMenuItem onSelect={handleContextCopyUrl}>
+          <LinkIcon />
+          Copy PR URL
+        </ContextMenuItem>
+        <ContextMenuItem
+          onSelect={() => {
+            window.open(pullRequest.url, '_blank', 'noopener,noreferrer')
+          }}
+        >
+          <ExternalLink />
+          Open in browser
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   )
 }
