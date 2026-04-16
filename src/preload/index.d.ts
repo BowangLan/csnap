@@ -44,6 +44,7 @@ declare global {
         playSound: (soundName: MacOsNotificationSound) => Promise<void>
         sendTestNotification: (event: PrNotificationEvent) => Promise<void>
         switchAccount: (login: string) => Promise<GithubSnapshot>
+        toggleReaction: (subjectId: string, content: string) => Promise<void>
         squashAndMerge: (prUrl: string) => Promise<void>
         setRepoPath: (nameWithOwner: string, localPath: string) => Promise<void>
         checkoutBranch: (nameWithOwner: string, branch: string) => Promise<void>

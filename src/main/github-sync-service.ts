@@ -48,6 +48,7 @@ const GITHUB_CHANNELS = {
   switchAccount: 'github:switch-account',
   playSound: 'github:play-sound',
   sendTestNotification: 'github:send-test-notification',
+  toggleReaction: 'github:toggle-reaction',
   squashMerge: 'github:squash-merge',
   setRepoPath: 'github:set-repo-path',
   checkoutBranch: 'github:checkout-branch',
@@ -162,6 +163,7 @@ const PULL_REQUEST_QUERY = `
               }
               reactionGroups {
                 content
+                viewerHasReacted
                 users {
                   totalCount
                 }
@@ -196,6 +198,7 @@ const PULL_REQUEST_QUERY = `
                   authorAssociation
                   reactionGroups {
                     content
+                    viewerHasReacted
                     users {
                       totalCount
                     }
@@ -296,6 +299,7 @@ const PR_ISSUE_COMMENTS_PAGE_QUERY = `
             }
             reactionGroups {
               content
+              viewerHasReacted
               users {
                 totalCount
               }
@@ -339,6 +343,7 @@ const PR_REVIEW_THREADS_PAGE_QUERY = `
                 authorAssociation
                 reactionGroups {
                   content
+                  viewerHasReacted
                   users {
                     totalCount
                   }
@@ -376,6 +381,7 @@ const PR_REVIEW_THREAD_COMMENTS_PAGE_QUERY = `
             authorAssociation
             reactionGroups {
               content
+              viewerHasReacted
               users {
                 totalCount
               }
@@ -402,6 +408,7 @@ type GhReviewCommentNode = {
   authorAssociation: string
   reactionGroups: Array<{
     content: string
+    viewerHasReacted: boolean
     users: { totalCount: number }
   }>
 }
@@ -463,6 +470,7 @@ interface GhPullRequestNode {
       author: { login: string; avatarUrl: string } | null
       reactionGroups: Array<{
         content: string
+        viewerHasReacted: boolean
         users: { totalCount: number }
       }>
     }>
@@ -818,6 +826,9 @@ export class GithubSyncService {
     ipcMain.handle(GITHUB_CHANNELS.squashMerge, (_event, prUrl: string) =>
       this.squashAndMerge(prUrl),
     )
+    ipcMain.handle(GITHUB_CHANNELS.toggleReaction, (_event, subjectId: string, content: string) =>
+      this.toggleReaction(subjectId, content),
+    )
     ipcMain.handle(GITHUB_CHANNELS.setRepoPath, (_event, nameWithOwner: string, localPath: string) =>
       this.setRepoPath(nameWithOwner, localPath),
     )
@@ -836,6 +847,7 @@ export class GithubSyncService {
     ipcMain.removeHandler(GITHUB_CHANNELS.playSound)
     ipcMain.removeHandler(GITHUB_CHANNELS.sendTestNotification)
     ipcMain.removeHandler(GITHUB_CHANNELS.squashMerge)
+    ipcMain.removeHandler(GITHUB_CHANNELS.toggleReaction)
     ipcMain.removeHandler(GITHUB_CHANNELS.setRepoPath)
     ipcMain.removeHandler(GITHUB_CHANNELS.checkoutBranch)
     ipcMain.removeHandler(GITHUB_CHANNELS.pickFolder)
@@ -1443,6 +1455,66 @@ export class GithubSyncService {
     void this.refresh()
   }
 
+  async toggleReaction(subjectId: string, content: string): Promise<void> {
+    const snapshot = this.githubStore.getSnapshot()
+    const viewerHasReacted = this.findViewerHasReacted(snapshot, subjectId, content)
+
+    const mutation = viewerHasReacted
+      ? `mutation($subjectId: ID!, $content: ReactionContent!) {
+          removeReaction(input: { subjectId: $subjectId, content: $content }) {
+            subject { id }
+          }
+        }`
+      : `mutation($subjectId: ID!, $content: ReactionContent!) {
+          addReaction(input: { subjectId: $subjectId, content: $content }) {
+            subject { id }
+          }
+        }`
+
+    await this.runGhJson([
+      'api',
+      'graphql',
+      '-f',
+      `query=${mutation}`,
+      '-F',
+      `subjectId=${subjectId}`,
+      '-F',
+      `content=${content}`,
+    ])
+
+    // Await the refresh so callers (e.g. renderer) can rely on the snapshot
+    // being up-to-date when their IPC promise resolves. If a refresh is already
+    // in progress, wait for it and then run one more to pick up our mutation.
+    if (this.isRefreshing) {
+      await this.waitForRefreshIdle()
+    }
+    await this.refresh()
+  }
+
+  private async waitForRefreshIdle(timeoutMs = 15_000): Promise<void> {
+    const deadline = Date.now() + timeoutMs
+    while (this.isRefreshing && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    }
+  }
+
+  private findViewerHasReacted(
+    snapshot: GithubSnapshot,
+    commentId: string,
+    content: string,
+  ): boolean {
+    for (const pr of snapshot.pullRequests) {
+      for (const comment of pr.comments) {
+        if (comment.id === commentId) {
+          return comment.reactionGroups.some(
+            (r) => r.content === content && r.viewerHasReacted,
+          )
+        }
+      }
+    }
+    return false
+  }
+
   private async setRepoPath(nameWithOwner: string, localPath: string): Promise<void> {
     const paths = { ...this.settings.localRepoPaths }
     if (localPath) {
@@ -1560,8 +1632,8 @@ function mapIssueComments(
     isMinimized: n.isMinimized,
     minimizedReason: n.minimizedReason,
     reactionGroups: n.reactionGroups
-      .filter((rg) => rg.users.totalCount > 0)
-      .map((rg) => ({ content: rg.content, count: rg.users.totalCount })),
+      .filter((rg) => rg.users.totalCount > 0 || rg.viewerHasReacted)
+      .map((rg) => ({ content: rg.content, count: rg.users.totalCount, viewerHasReacted: rg.viewerHasReacted })),
   }))
   return mapped.sort((a, b) => a.createdAt - b.createdAt)
 }
@@ -1579,8 +1651,8 @@ function mapReviewThreadCommentNode(n: GhReviewCommentNode): GithubPullRequestCo
     isMinimized: false,
     minimizedReason: null,
     reactionGroups: n.reactionGroups
-      .filter((rg) => rg.users.totalCount > 0)
-      .map((rg) => ({ content: rg.content, count: rg.users.totalCount })),
+      .filter((rg) => rg.users.totalCount > 0 || rg.viewerHasReacted)
+      .map((rg) => ({ content: rg.content, count: rg.users.totalCount, viewerHasReacted: rg.viewerHasReacted })),
     diffPath: n.path || null,
   }
 }

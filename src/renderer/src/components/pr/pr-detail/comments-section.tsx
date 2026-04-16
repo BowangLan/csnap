@@ -3,6 +3,7 @@ import { formatDistanceToNow } from 'date-fns'
 import { ExternalLink, MapPin, MessageSquare, Wrench } from 'lucide-react'
 import { Icons } from '@renderer/components/icons'
 import { Markdown } from '@renderer/components/Markdown'
+import { ReactionBar } from '@renderer/components/reaction-bar'
 import { Avatar, AvatarFallback, AvatarImage } from '@renderer/components/ui/avatar'
 import { useGithubSnapshot } from '@renderer/hooks/use-github-snapshot'
 import type {
@@ -155,6 +156,10 @@ function CommentCard({ item, bug }: { item: GithubPullRequestComment; bug?: PrBu
           ) : null}
 
           {bug && <BugCallout bug={bug} />}
+
+          <div className="mt-3">
+            <ReactionBar reactions={item.reactionGroups} subjectId={item.id} />
+          </div>
         </div>
       </div>
     </article>

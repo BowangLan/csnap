@@ -18,6 +18,7 @@ const GITHUB_CHANNELS = {
   switchAccount: 'github:switch-account',
   playSound: 'github:play-sound',
   sendTestNotification: 'github:send-test-notification',
+  toggleReaction: 'github:toggle-reaction',
   squashMerge: 'github:squash-merge',
   setRepoPath: 'github:set-repo-path',
   checkoutBranch: 'github:checkout-branch',
@@ -90,6 +91,8 @@ const api = {
     sendTestNotification: (event: PrNotificationEvent) =>
       ipcRenderer.invoke(GITHUB_CHANNELS.sendTestNotification, event) as Promise<void>,
     switchAccount: (login: string) => ipcRenderer.invoke(GITHUB_CHANNELS.switchAccount, login),
+    toggleReaction: (subjectId: string, content: string) =>
+      ipcRenderer.invoke(GITHUB_CHANNELS.toggleReaction, subjectId, content) as Promise<void>,
     squashAndMerge: (prUrl: string) =>
       ipcRenderer.invoke(GITHUB_CHANNELS.squashMerge, prUrl) as Promise<void>,
     setRepoPath: (nameWithOwner: string, localPath: string) =>

@@ -19,6 +19,7 @@ export interface GithubPullRequestReviewer {
 export interface GithubPullRequestReaction {
   content: string
   count: number
+  viewerHasReacted: boolean
 }
 
 export interface GithubPullRequestComment {

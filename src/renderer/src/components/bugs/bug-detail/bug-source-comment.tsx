@@ -2,6 +2,7 @@ import { formatDistanceToNow } from 'date-fns'
 import { ExternalLink, MessageSquare } from 'lucide-react'
 import { Avatar, AvatarFallback, AvatarImage } from '@renderer/components/ui/avatar'
 import { Markdown } from '@renderer/components/Markdown'
+import { ReactionBar } from '@renderer/components/reaction-bar'
 import type { GithubPullRequest, PrBug } from '../../../../../shared/github'
 
 function initials(name: string): string {
@@ -87,6 +88,10 @@ export function BugSourceComment({
                 <Markdown className="text-foreground/90">{comment.body}</Markdown>
               </div>
             )}
+
+            <div className="mt-3">
+              <ReactionBar reactions={comment.reactionGroups} subjectId={comment.id} />
+            </div>
           </div>
         </div>
       </article>
