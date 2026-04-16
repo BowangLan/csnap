@@ -9,8 +9,13 @@ import { useGithubSnapshot } from '@renderer/hooks/use-github-snapshot'
 import appCss from '@renderer/assets/base.css?url'
 
 const PR_DETAIL_PATH = /^\/prs\/([^/]+)$/
+const BUG_DETAIL_PATH = /^\/bugs\/([^/]+)$/
 
-function breadcrumbLabelFromPath(pathname: string, pullRequests: { id: string; title: string }[]): string {
+function breadcrumbLabelFromPath(
+  pathname: string,
+  pullRequests: { id: string; title: string }[],
+  bugs?: { id: string; title: string }[],
+): string {
   if (pathname === '/' || pathname === '') {
     return 'Home'
   }
@@ -25,8 +30,22 @@ function breadcrumbLabelFromPath(pathname: string, pullRequests: { id: string; t
     return 'Pull request'
   }
 
+  const bugMatch = pathname.match(BUG_DETAIL_PATH)
+  if (bugMatch) {
+    const bugId = bugMatch[1]
+    const bug = bugs?.find((candidate) => candidate.id === bugId)
+    if (bug) {
+      return bug.title
+    }
+    return 'Bug'
+  }
+
   if (pathname === '/prs' || pathname === '/prs/') {
     return 'Pull requests'
+  }
+
+  if (pathname === '/bugs' || pathname === '/bugs/') {
+    return 'Bugs'
   }
 
   const path = pathname.startsWith('/') ? pathname.slice(1) : pathname
@@ -44,8 +63,8 @@ const RootLayout = () => {
   })
 
   const pageName = React.useMemo(
-    () => breadcrumbLabelFromPath(location.pathname, snapshot.pullRequests),
-    [location.pathname, snapshot.pullRequests],
+    () => breadcrumbLabelFromPath(location.pathname, snapshot.pullRequests, snapshot.bugs),
+    [location.pathname, snapshot.pullRequests, snapshot.bugs],
   )
 
   return (

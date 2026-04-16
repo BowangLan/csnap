@@ -19,7 +19,9 @@ import { Route as BugsRouteImport } from './routes/bugs'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as PrsIndexRouteImport } from './routes/prs.index'
+import { Route as BugsIndexRouteImport } from './routes/bugs.index'
 import { Route as PrsPrIdRouteImport } from './routes/prs.$prId'
+import { Route as BugsBugIdRouteImport } from './routes/bugs.$bugId'
 
 const UsersRoute = UsersRouteImport.update({
   id: '/users',
@@ -71,49 +73,64 @@ const PrsIndexRoute = PrsIndexRouteImport.update({
   path: '/',
   getParentRoute: () => PrsRoute,
 } as any)
+const BugsIndexRoute = BugsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => BugsRoute,
+} as any)
 const PrsPrIdRoute = PrsPrIdRouteImport.update({
   id: '/$prId',
   path: '/$prId',
   getParentRoute: () => PrsRoute,
 } as any)
+const BugsBugIdRoute = BugsBugIdRouteImport.update({
+  id: '/$bugId',
+  path: '/$bugId',
+  getParentRoute: () => BugsRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
-  '/bugs': typeof BugsRoute
+  '/bugs': typeof BugsRouteWithChildren
   '/components': typeof ComponentsRoute
   '/dashboard': typeof DashboardRoute
   '/prs': typeof PrsRouteWithChildren
   '/repos': typeof ReposRoute
   '/settings': typeof SettingsRoute
   '/users': typeof UsersRoute
+  '/bugs/$bugId': typeof BugsBugIdRoute
   '/prs/$prId': typeof PrsPrIdRoute
+  '/bugs/': typeof BugsIndexRoute
   '/prs/': typeof PrsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
-  '/bugs': typeof BugsRoute
   '/components': typeof ComponentsRoute
   '/dashboard': typeof DashboardRoute
   '/repos': typeof ReposRoute
   '/settings': typeof SettingsRoute
   '/users': typeof UsersRoute
+  '/bugs/$bugId': typeof BugsBugIdRoute
   '/prs/$prId': typeof PrsPrIdRoute
+  '/bugs': typeof BugsIndexRoute
   '/prs': typeof PrsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
-  '/bugs': typeof BugsRoute
+  '/bugs': typeof BugsRouteWithChildren
   '/components': typeof ComponentsRoute
   '/dashboard': typeof DashboardRoute
   '/prs': typeof PrsRouteWithChildren
   '/repos': typeof ReposRoute
   '/settings': typeof SettingsRoute
   '/users': typeof UsersRoute
+  '/bugs/$bugId': typeof BugsBugIdRoute
   '/prs/$prId': typeof PrsPrIdRoute
+  '/bugs/': typeof BugsIndexRoute
   '/prs/': typeof PrsIndexRoute
 }
 export interface FileRouteTypes {
@@ -128,19 +145,22 @@ export interface FileRouteTypes {
     | '/repos'
     | '/settings'
     | '/users'
+    | '/bugs/$bugId'
     | '/prs/$prId'
+    | '/bugs/'
     | '/prs/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/about'
-    | '/bugs'
     | '/components'
     | '/dashboard'
     | '/repos'
     | '/settings'
     | '/users'
+    | '/bugs/$bugId'
     | '/prs/$prId'
+    | '/bugs'
     | '/prs'
   id:
     | '__root__'
@@ -153,14 +173,16 @@ export interface FileRouteTypes {
     | '/repos'
     | '/settings'
     | '/users'
+    | '/bugs/$bugId'
     | '/prs/$prId'
+    | '/bugs/'
     | '/prs/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AboutRoute: typeof AboutRoute
-  BugsRoute: typeof BugsRoute
+  BugsRoute: typeof BugsRouteWithChildren
   ComponentsRoute: typeof ComponentsRoute
   DashboardRoute: typeof DashboardRoute
   PrsRoute: typeof PrsRouteWithChildren
@@ -241,6 +263,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PrsIndexRouteImport
       parentRoute: typeof PrsRoute
     }
+    '/bugs/': {
+      id: '/bugs/'
+      path: '/'
+      fullPath: '/bugs/'
+      preLoaderRoute: typeof BugsIndexRouteImport
+      parentRoute: typeof BugsRoute
+    }
     '/prs/$prId': {
       id: '/prs/$prId'
       path: '/$prId'
@@ -248,8 +277,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PrsPrIdRouteImport
       parentRoute: typeof PrsRoute
     }
+    '/bugs/$bugId': {
+      id: '/bugs/$bugId'
+      path: '/$bugId'
+      fullPath: '/bugs/$bugId'
+      preLoaderRoute: typeof BugsBugIdRouteImport
+      parentRoute: typeof BugsRoute
+    }
   }
 }
+
+interface BugsRouteChildren {
+  BugsBugIdRoute: typeof BugsBugIdRoute
+  BugsIndexRoute: typeof BugsIndexRoute
+}
+
+const BugsRouteChildren: BugsRouteChildren = {
+  BugsBugIdRoute: BugsBugIdRoute,
+  BugsIndexRoute: BugsIndexRoute,
+}
+
+const BugsRouteWithChildren = BugsRoute._addFileChildren(BugsRouteChildren)
 
 interface PrsRouteChildren {
   PrsPrIdRoute: typeof PrsPrIdRoute
@@ -266,7 +314,7 @@ const PrsRouteWithChildren = PrsRoute._addFileChildren(PrsRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
-  BugsRoute: BugsRoute,
+  BugsRoute: BugsRouteWithChildren,
   ComponentsRoute: ComponentsRoute,
   DashboardRoute: DashboardRoute,
   PrsRoute: PrsRouteWithChildren,

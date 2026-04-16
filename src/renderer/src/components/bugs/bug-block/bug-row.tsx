@@ -39,14 +39,12 @@ export function BugRow({
         'has-[a[data-transitioning]]:cursor-wait has-[a[data-transitioning]]:opacity-70'
       )}
     >
-      {pr ? (
-        <Link
-          to="/prs/$prId"
-          params={{ prId: pr.id }}
-          className="absolute inset-0 z-0 rounded-lg"
-          aria-label={`View pull request ${pr.number} for this bug`}
-        />
-      ) : null}
+      <Link
+        to="/bugs/$bugId"
+        params={{ bugId: bug.id }}
+        className="absolute inset-0 z-0 rounded-lg"
+        aria-label={`View bug: ${bug.title}`}
+      />
 
       <div className="relative flex-none">
         <Icons.Bug className={cn(
