@@ -612,11 +612,22 @@ interface PrPollFingerprint {
   commitsCount: number
 }
 
+class RateLimitError extends Error {
+  constructor(
+    message: string,
+    readonly resetAt: Date | null,
+  ) {
+    super(message)
+    this.name = 'RateLimitError'
+  }
+}
+
 export class GithubSyncService {
   private pollTimer: NodeJS.Timeout | null = null
   private settingsPath = ''
   private isRefreshing = false
   private lastPollFingerprints: PrPollFingerprint[] = []
+  private rateLimitResetAt: Date | null = null
 
   constructor(private readonly githubStore: GithubStoreService) {}
 
@@ -655,8 +666,39 @@ export class GithubSyncService {
     return this.githubStore.getSnapshot().settings
   }
 
+  private isRateLimited(): boolean {
+    if (!this.rateLimitResetAt) return false
+    if (new Date() >= this.rateLimitResetAt) {
+      this.rateLimitResetAt = null
+      return false
+    }
+    return true
+  }
+
+  private handleRateLimitFromResponse(rl: GhRateLimit): void {
+    if (rl.remaining <= 10) {
+      this.rateLimitResetAt = new Date(rl.resetAt)
+      console.warn(
+        `[github:rateLimit] Only ${rl.remaining} points remaining — pausing requests until ${rl.resetAt}`,
+      )
+    }
+  }
+
+  private formatRateLimitError(error: RateLimitError): string {
+    if (error.resetAt) {
+      const mins = Math.max(1, Math.ceil((error.resetAt.getTime() - Date.now()) / 60_000))
+      return `GitHub API rate limit exceeded. Requests will resume in ~${mins} minute${mins === 1 ? '' : 's'}.`
+    }
+    return 'GitHub API rate limit exceeded. Requests will resume when the limit resets.'
+  }
+
   async refresh(): Promise<GithubSnapshot> {
     if (this.isRefreshing) {
+      return this.githubStore.getSnapshot()
+    }
+
+    if (this.isRateLimited()) {
+      console.log('[refresh] skipped — rate limited until', this.rateLimitResetAt?.toISOString())
       return this.githubStore.getSnapshot()
     }
 
@@ -683,6 +725,7 @@ export class GithubSyncService {
 
       const nextData = await this.fetchGithubData()
       this.logRateLimit('full-fetch', nextData.rateLimit)
+      this.handleRateLimitFromResponse(nextData.rateLimit)
       const changes = this.getPrChanges(previousPullRequests, nextData.pullRequests)
       const hasAnyChange =
         changes.hasNewCommit ||
@@ -706,10 +749,18 @@ export class GithubSyncService {
         this.sendNativeNotifications(changes)
       }
     } catch (error) {
-      this.githubStore.commitSyncFailed({
-        error: error instanceof Error ? error.message : 'Failed to refresh GitHub data.',
-        auth: { isAuthenticated: true, activeLogin: this.githubStore.getSnapshot().auth.activeLogin },
-      })
+      if (error instanceof RateLimitError) {
+        this.rateLimitResetAt = error.resetAt ?? new Date(Date.now() + 60_000)
+        this.githubStore.commitSyncFailed({
+          error: this.formatRateLimitError(error),
+          auth: { isAuthenticated: true, activeLogin: this.githubStore.getSnapshot().auth.activeLogin },
+        })
+      } else {
+        this.githubStore.commitSyncFailed({
+          error: error instanceof Error ? error.message : 'Failed to refresh GitHub data.',
+          auth: { isAuthenticated: true, activeLogin: this.githubStore.getSnapshot().auth.activeLogin },
+        })
+      }
     } finally {
       this.isRefreshing = false
     }
@@ -813,9 +864,15 @@ export class GithubSyncService {
   private async poll(): Promise<void> {
     if (this.isRefreshing) return
 
+    if (this.isRateLimited()) {
+      console.log('[poll] skipped — rate limited until', this.rateLimitResetAt?.toISOString())
+      return
+    }
+
     try {
       const result = await this.fetchPollData()
       this.logRateLimit('poll', result.rateLimit)
+      this.handleRateLimitFromResponse(result.rateLimit)
       const nextFingerprints = this.buildFingerprintsFromPoll(result.nodes)
 
       if (this.fingerprintsChanged(this.lastPollFingerprints, nextFingerprints)) {
@@ -823,8 +880,17 @@ export class GithubSyncService {
         void this.refresh()
       }
     } catch (error) {
-      console.warn('[poll] lightweight poll failed, falling back to full refresh:', error)
-      void this.refresh()
+      if (error instanceof RateLimitError) {
+        this.rateLimitResetAt = error.resetAt ?? new Date(Date.now() + 60_000)
+        console.warn('[poll] rate limited, pausing until', this.rateLimitResetAt.toISOString())
+        this.githubStore.commitSyncFailed({
+          error: this.formatRateLimitError(error),
+          auth: { isAuthenticated: true, activeLogin: this.githubStore.getSnapshot().auth.activeLogin },
+        })
+      } else {
+        console.warn('[poll] lightweight poll failed, falling back to full refresh:', error)
+        void this.refresh()
+      }
     }
   }
 
@@ -943,7 +1009,8 @@ export class GithubSyncService {
         isAuthenticated: true,
         activeLogin: viewer.login,
       }
-    } catch {
+    } catch (error) {
+      if (error instanceof RateLimitError) throw error
       return {
         isAuthenticated: false,
         activeLogin: null,
@@ -1405,13 +1472,39 @@ export class GithubSyncService {
   }
 
   private async runGhJson<T>(args: string[]): Promise<T> {
-    const { stdout } = await execFileAsync('gh', args, {
-      cwd: app.getPath('home'),
-      env: process.env,
-      maxBuffer: 1024 * 1024 * 8,
-    })
+    try {
+      const { stdout } = await execFileAsync('gh', args, {
+        cwd: app.getPath('home'),
+        env: process.env,
+        maxBuffer: 1024 * 1024 * 8,
+      })
 
-    return JSON.parse(stdout) as T
+      const parsed = JSON.parse(stdout) as T
+
+      // GraphQL can return errors in the body even with exit code 0.
+      const maybeErrors = (parsed as { errors?: Array<{ type?: string; message?: string }> }).errors
+      if (maybeErrors?.some((e) => e.type === 'RATE_LIMITED' || /rate limit/i.test(e.message ?? ''))) {
+        throw new RateLimitError(
+          maybeErrors.map((e) => e.message).join('; '),
+          parseResetAtFromGraphql(parsed),
+        )
+      }
+
+      return parsed
+    } catch (error) {
+      if (error instanceof RateLimitError) throw error
+
+      const e = error as NodeJS.ErrnoException & { stderr?: string; stdout?: string }
+      const combinedOutput = `${e.stderr ?? ''} ${e.stdout ?? ''} ${e.message ?? ''}`
+      if (/rate limit/i.test(combinedOutput)) {
+        throw new RateLimitError(
+          combinedOutput.trim(),
+          parseResetAtFromCliError(combinedOutput),
+        )
+      }
+
+      throw error
+    }
   }
 }
 
@@ -1571,6 +1664,41 @@ function buildNativeNotificationContent(
     case 'otherChange':
       return { title: 'Pull Request Updated', body: `${pr.title}\n${location}` }
   }
+}
+
+/**
+ * Try to extract `resetAt` from a GraphQL response that includes `rateLimit` data.
+ */
+function parseResetAtFromGraphql(response: unknown): Date | null {
+  try {
+    const resetAt = (response as { data?: { rateLimit?: { resetAt?: string } } })?.data?.rateLimit
+      ?.resetAt
+    if (resetAt) return new Date(resetAt)
+  } catch { /* ignore */ }
+  return null
+}
+
+/**
+ * Try to extract a reset time from the CLI error text.
+ * `gh` sometimes includes "try again in Xm Ys" or an ISO timestamp.
+ */
+function parseResetAtFromCliError(text: string): Date | null {
+  const isoMatch = text.match(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)
+  if (isoMatch) {
+    const d = new Date(isoMatch[0])
+    if (!Number.isNaN(d.getTime())) return d
+  }
+
+  const minuteMatch = text.match(/try again in (\d+)m/i)
+  const secondMatch = text.match(/try again in (?:\d+m\s*)?(\d+)s/i)
+  if (minuteMatch || secondMatch) {
+    const mins = minuteMatch ? parseInt(minuteMatch[1], 10) : 0
+    const secs = secondMatch ? parseInt(secondMatch[1], 10) : 0
+    return new Date(Date.now() + (mins * 60 + secs) * 1000)
+  }
+
+  // Default: assume 1 hour if we can't parse.
+  return new Date(Date.now() + 60 * 60 * 1000)
 }
 
 /**
