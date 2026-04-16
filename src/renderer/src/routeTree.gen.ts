@@ -14,6 +14,7 @@ import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ReposRouteImport } from './routes/repos'
 import { Route as PrsRouteImport } from './routes/prs'
 import { Route as DashboardRouteImport } from './routes/dashboard'
+import { Route as ComponentsRouteImport } from './routes/components'
 import { Route as BugsRouteImport } from './routes/bugs'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
@@ -43,6 +44,11 @@ const PrsRoute = PrsRouteImport.update({
 const DashboardRoute = DashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ComponentsRoute = ComponentsRouteImport.update({
+  id: '/components',
+  path: '/components',
   getParentRoute: () => rootRouteImport,
 } as any)
 const BugsRoute = BugsRouteImport.update({
@@ -75,6 +81,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/bugs': typeof BugsRoute
+  '/components': typeof ComponentsRoute
   '/dashboard': typeof DashboardRoute
   '/prs': typeof PrsRouteWithChildren
   '/repos': typeof ReposRoute
@@ -87,6 +94,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/bugs': typeof BugsRoute
+  '/components': typeof ComponentsRoute
   '/dashboard': typeof DashboardRoute
   '/repos': typeof ReposRoute
   '/settings': typeof SettingsRoute
@@ -99,6 +107,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/bugs': typeof BugsRoute
+  '/components': typeof ComponentsRoute
   '/dashboard': typeof DashboardRoute
   '/prs': typeof PrsRouteWithChildren
   '/repos': typeof ReposRoute
@@ -113,6 +122,7 @@ export interface FileRouteTypes {
     | '/'
     | '/about'
     | '/bugs'
+    | '/components'
     | '/dashboard'
     | '/prs'
     | '/repos'
@@ -125,6 +135,7 @@ export interface FileRouteTypes {
     | '/'
     | '/about'
     | '/bugs'
+    | '/components'
     | '/dashboard'
     | '/repos'
     | '/settings'
@@ -136,6 +147,7 @@ export interface FileRouteTypes {
     | '/'
     | '/about'
     | '/bugs'
+    | '/components'
     | '/dashboard'
     | '/prs'
     | '/repos'
@@ -149,6 +161,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AboutRoute: typeof AboutRoute
   BugsRoute: typeof BugsRoute
+  ComponentsRoute: typeof ComponentsRoute
   DashboardRoute: typeof DashboardRoute
   PrsRoute: typeof PrsRouteWithChildren
   ReposRoute: typeof ReposRoute
@@ -191,6 +204,13 @@ declare module '@tanstack/react-router' {
       path: '/dashboard'
       fullPath: '/dashboard'
       preLoaderRoute: typeof DashboardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/components': {
+      id: '/components'
+      path: '/components'
+      fullPath: '/components'
+      preLoaderRoute: typeof ComponentsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/bugs': {
@@ -247,6 +267,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
   BugsRoute: BugsRoute,
+  ComponentsRoute: ComponentsRoute,
   DashboardRoute: DashboardRoute,
   PrsRoute: PrsRouteWithChildren,
   ReposRoute: ReposRoute,

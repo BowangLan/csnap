@@ -1,7 +1,16 @@
 import { formatDistanceToNow } from 'date-fns'
+import { Copy, MoreHorizontal } from 'lucide-react'
+import { toast } from 'sonner'
 import { Link } from '@tanstack/react-router'
 import { OpenInBrowserButton } from '@renderer/components/pr/pr-block/open-in-browser-button'
 import { Icons } from '@renderer/components/icons'
+import { Button } from '@renderer/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@renderer/components/ui/dropdown-menu'
 import { ListItem } from '@renderer/components/ui/list'
 import { cn } from '@renderer/lib/utils'
 import type { GithubPullRequest, PrBug } from '../../../../../shared/github'
@@ -90,6 +99,31 @@ export function BugRow({
       <div className="relative z-10 ml-auto flex shrink-0 items-center gap-2">
         <BugStatusSelect bug={bug} pr={pr} />
         {pr ? <OpenInBrowserButton url={pr.url} /> : null}
+        {bug.aiPrompt ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="pointer-events-auto size-7 opacity-0 transition-opacity group-hover:opacity-100 data-[state=open]:opacity-100"
+                aria-label="More actions"
+              >
+                <MoreHorizontal className="size-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                onSelect={() => {
+                  navigator.clipboard.writeText(bug.aiPrompt!)
+                  toast.success('AI prompt copied to clipboard')
+                }}
+              >
+                <Copy className="size-4" />
+                Copy AI prompt
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : null}
       </div>
     </ListItem>
   )

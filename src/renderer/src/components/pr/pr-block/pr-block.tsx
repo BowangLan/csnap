@@ -9,6 +9,7 @@ import { CopyUrlButton } from './copy-url-button'
 import { OpenInBrowserButton } from './open-in-browser-button'
 import { CheckoutBranchButton } from './checkout-branch-button'
 import { Icons } from '@renderer/components/icons'
+import { Badge } from '@renderer/components/ui/badge'
 import { ListItem } from '@renderer/components/ui/list'
 import { useGithubSnapshot } from '@renderer/hooks/use-github-snapshot'
 import { useRepoStatuses } from '@renderer/hooks/use-repo-statuses'
@@ -43,6 +44,7 @@ export function PullRequestBlock({ pullRequest }: { pullRequest: GithubPullReque
   const hasLocalPath = Boolean(snapshot.settings.localRepoPaths[pullRequest.repositoryNameWithOwner])
   const repoStatus = repoStatuses[pullRequest.repositoryNameWithOwner]
   const isActive = Boolean(repoStatus?.branch && repoStatus.branch === pullRequest.headRefName)
+  const bugCount = snapshot.bugs.filter((b) => b.prId === pullRequest.id && b.status !== 'resolved').length
 
   return (
     <ListItem
@@ -132,6 +134,16 @@ export function PullRequestBlock({ pullRequest }: { pullRequest: GithubPullReque
       <CopyUrlButton url={pullRequest.url} />
       <OpenInBrowserButton url={pullRequest.url} />
 
+      {bugCount > 0 ? (
+        <Badge
+          variant="destructive"
+          className="relative z-10 pointer-events-none tabular-nums gap-1"
+        >
+          <Icons.Bug className="size-3" />
+          {bugCount}
+        </Badge>
+      ) : null}
+
       {/* <Row className="relative z-10 ml-auto justify-end gap-2 pointer-events-auto">
         <LinearIssueBadge pr={pullRequest} />
         <Button variant="ghost" size="icon-sm" asChild className="shrink-0">
@@ -157,6 +169,7 @@ export function PullRequestBlockRow({ pullRequest }: { pullRequest: GithubPullRe
   const hasLocalPath = Boolean(snapshot.settings.localRepoPaths[pullRequest.repositoryNameWithOwner])
   const repoStatus = repoStatuses[pullRequest.repositoryNameWithOwner]
   const isActive = Boolean(repoStatus?.branch && repoStatus.branch === pullRequest.headRefName)
+  const bugCount = snapshot.bugs.filter((b) => b.prId === pullRequest.id && b.status !== 'resolved').length
 
   return (
     <ListItem
@@ -206,6 +219,16 @@ export function PullRequestBlockRow({ pullRequest }: { pullRequest: GithubPullRe
       <p className="relative z-10 hidden min-w-0 max-w-[min(100%,20rem)] truncate text-xs text-muted-foreground md:block pointer-events-none">
         {formatDistanceToNow(pullRequest.updatedAt, { addSuffix: true })}
       </p>
+      {bugCount > 0 ? (
+        <Badge
+          variant="destructive"
+          className="relative z-10 pointer-events-none tabular-nums gap-1"
+        >
+          <Icons.Bug className="size-3" />
+          {bugCount}
+        </Badge>
+      ) : null}
+
       <div className="shrink-0 flex items-center gap-2">
         <CheckoutBranchButton
           nameWithOwner={pullRequest.repositoryNameWithOwner}
