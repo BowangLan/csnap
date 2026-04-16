@@ -1,6 +1,7 @@
 import { formatDistanceToNow } from 'date-fns'
 import { ExternalLink, GitBranch, Link as LinkIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
+import { useId, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { toast } from 'sonner'
 import { cn } from '@renderer/lib/utils'
@@ -18,9 +19,11 @@ import {
   ContextMenuItem,
   ContextMenuTrigger,
 } from '@renderer/components/ui/context-menu'
-import { ListItem } from '@renderer/components/ui/list'
+import { List, ListItem } from '@renderer/components/ui/list'
+import { ListSectionExpandToggle } from '@renderer/components/ui/list-section-expand-toggle'
 import { useGithubSnapshot } from '@renderer/hooks/use-github-snapshot'
 import { useRepoStatuses } from '@renderer/hooks/use-repo-statuses'
+import { BugRow } from '../../bugs/bug-block/bug-row'
 import { SEVERITY_STYLES } from '../../bugs/bug-block/bug-severity-badge'
 
 const SEVERITY_LEVELS: readonly PrBug['severity'][] = [
@@ -218,6 +221,9 @@ export function PullRequestBlockRow({ pullRequest }: { pullRequest: GithubPullRe
   const isActive = Boolean(repoStatus?.branch && repoStatus.branch === pullRequest.headRefName)
   const prBugsRow = snapshot.bugs.filter((b) => b.prId === pullRequest.id && b.status !== 'resolved')
   const severityCountsRow = countBugsBySeverity(prBugsRow)
+  const hasBugs = prBugsRow.length > 0
+  const [bugsExpanded, setBugsExpanded] = useState(false)
+  const bugsListId = useId()
   const branch = pullRequest.headRefName
   const canCheckout = Boolean(hasLocalPath && branch)
 
@@ -239,93 +245,124 @@ export function PullRequestBlockRow({ pullRequest }: { pullRequest: GithubPullRe
   }
 
   return (
-    <ContextMenu>
-      <ContextMenuTrigger asChild>
-        <ListItem
-          title="Right-click for actions"
-          className={cn(
-            'group relative gap-x-4',
-            'has-[a[data-transitioning]]:cursor-wait has-[a[data-transitioning]]:opacity-70',
-          )}
-        >
-          <Link
-            to="/prs/$prId"
-            params={{ prId: pullRequest.id }}
-            className="absolute inset-0 z-0 rounded-lg"
-            aria-label={`View pull request ${pullRequest.number}`}
-          />
-
-          {/* Row Item: PR Status */}
-          <div className="flex-none relative">
-            <Icons.PullRequest className="size-4 text-muted-foreground pointer-events-none flex-none" />
-            {ciStatus ? (
-              <span
-                className={cn(
-                  'absolute -top-0.5 -right-0.5 size-1.5 rounded-full ring-1 ring-background',
-                  CI_DOT_CLASS[ciStatus]
-                )}
+    <>
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          <ListItem
+            className={cn(
+              'group relative h-10 py-0',
+              'has-[a[data-transitioning]]:cursor-wait has-[a[data-transitioning]]:opacity-70',
+            )}
+          >
+            {!hasBugs ? (
+              <Link
+                to="/prs/$prId"
+                params={{ prId: pullRequest.id }}
+                className="absolute inset-0 z-0 rounded-lg"
+                aria-label={`View pull request ${pullRequest.number}`}
               />
             ) : null}
-          </div>
 
-          {/* Row Item: PR Number */}
-          <div className="font-normal text-foreground/70 text-sm font-mono min-w-0 flex-none w-8.5">
-            #{pullRequest.number}
-          </div>
+            {/* Col: expand toggle (fixed) */}
+            <ListSectionExpandToggle
+              expanded={bugsExpanded}
+              controlsId={bugsListId}
+              title={
+                bugsExpanded
+                  ? 'Hide bugs for this pull request'
+                  : 'Show bugs for this pull request'
+              }
+              srOnlyLabel={`${bugsExpanded ? 'Collapse' : 'Expand'} bugs for pull request ${pullRequest.title}`}
+              onClick={() => setBugsExpanded((v) => !v)}
+              className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 disabled:hover:opacity-50 disabled:cursor-not-allowed"
+            />
 
-          {/* Row Item: Title */}
-          <div
-            className="truncate text-sm font-medium min-w-0 shrink-0 basis-[min(40%,20rem)]"
-            title={`${pullRequest.title} — ${meta}`}
+            {/* Col: PR icon + CI dot (fixed) */}
+            <div className="flex-none relative">
+              <Icons.PullRequest className="size-4 text-muted-foreground pointer-events-none flex-none" />
+              {ciStatus ? (
+                <span
+                  className={cn(
+                    'absolute -top-0.5 -right-0.5 size-1.5 rounded-full ring-1 ring-background',
+                    CI_DOT_CLASS[ciStatus],
+                  )}
+                />
+              ) : null}
+            </div>
+
+            {/* Col: #Number (fixed) */}
+            <div className="font-normal text-foreground/70 text-sm font-mono flex-none w-12 tabular-nums">
+              #{pullRequest.number}
+            </div>
+
+            {/* Col: Title (flexible — fills middle so other columns align) */}
+            <div
+              className="flex-1 min-w-0 truncate text-sm font-medium pointer-events-none"
+              title={`${pullRequest.title} — ${meta}`}
+            >
+              {pullRequest.title}
+            </div>
+
+            {/* Col: Branch (fixed) */}
+            <div className="relative z-10 flex flex-none w-56 min-w-0 overflow-hidden items-center">
+              {pullRequest.headRefName ? (
+                <CopyBranchButton branchName={pullRequest.headRefName} />
+              ) : null}
+            </div>
+
+            {/* Col: Updated time (fixed, right-aligned) */}
+            <p className="relative z-10 hidden flex-none w-28 truncate text-right text-xs text-muted-foreground md:block pointer-events-none">
+              {formatDistanceToNow(pullRequest.updatedAt, { addSuffix: true })}
+            </p>
+
+            {/* Col: Bug severity pills (fixed, right-aligned) */}
+            <div className="relative z-10 flex flex-none w-36 justify-end tabular-nums">
+              <BugSeverityPills severityCounts={severityCountsRow} />
+            </div>
+          </ListItem>
+        </ContextMenuTrigger>
+        <ContextMenuContent onCloseAutoFocus={(e) => e.preventDefault()}>
+          <ContextMenuItem
+            disabled={!canCheckout}
+            title={
+              isActive
+                ? `On this branch: ${branch ?? ''}`
+                : hasLocalPath
+                  ? branch
+                    ? `Checkout branch: ${branch}`
+                    : 'No branch'
+                  : `No local path configured for ${pullRequest.repositoryNameWithOwner} — set one in Settings`
+            }
+            onSelect={() => {
+              void handleContextCheckout()
+            }}
           >
-            {pullRequest.title}
-          </div>
-          <div className="flex min-w-0 shrink-0 basis-[min(30%,18rem)] overflow-hidden items-center">
-            {pullRequest.headRefName ? (
-              <CopyBranchButton branchName={pullRequest.headRefName} />
-            ) : null}
-          </div>
-
-          <div className="flex-1" />
-
-          <p className="relative z-10 hidden min-w-0 max-w-[min(100%,20rem)] truncate text-xs text-muted-foreground md:block pointer-events-none">
-            {formatDistanceToNow(pullRequest.updatedAt, { addSuffix: true })}
-          </p>
-          <BugSeverityPills severityCounts={severityCountsRow} className="relative z-10 tabular-nums" />
-        </ListItem>
-      </ContextMenuTrigger>
-      <ContextMenuContent onCloseAutoFocus={(e) => e.preventDefault()}>
-        <ContextMenuItem
-          disabled={!canCheckout}
-          title={
-            isActive
-              ? `On this branch: ${branch ?? ''}`
-              : hasLocalPath
-                ? branch
-                  ? `Checkout branch: ${branch}`
-                  : 'No branch'
-                : `No local path configured for ${pullRequest.repositoryNameWithOwner} — set one in Settings`
-          }
-          onSelect={() => {
-            void handleContextCheckout()
-          }}
-        >
-          <GitBranch />
-          {isActive ? 'On this branch' : 'Checkout branch'}
-        </ContextMenuItem>
-        <ContextMenuItem onSelect={handleContextCopyUrl}>
-          <LinkIcon />
-          Copy PR URL
-        </ContextMenuItem>
-        <ContextMenuItem
-          onSelect={() => {
-            window.open(pullRequest.url, '_blank', 'noopener,noreferrer')
-          }}
-        >
-          <ExternalLink />
-          Open in browser
-        </ContextMenuItem>
-      </ContextMenuContent>
-    </ContextMenu>
+            <GitBranch />
+            {isActive ? 'On this branch' : 'Checkout branch'}
+          </ContextMenuItem>
+          <ContextMenuItem onSelect={handleContextCopyUrl}>
+            <LinkIcon />
+            Copy PR URL
+          </ContextMenuItem>
+          <ContextMenuItem
+            onSelect={() => {
+              window.open(pullRequest.url, '_blank', 'noopener,noreferrer')
+            }}
+          >
+            <ExternalLink />
+            Open in browser
+          </ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
+      {hasBugs ? (
+        <div id={bugsListId} hidden={!bugsExpanded} className="pl-row-indent">
+          <List>
+            {prBugsRow.map((bug) => (
+              <BugRow key={bug.id} bug={bug} pr={pullRequest} showPr={false} />
+            ))}
+          </List>
+        </div>
+      ) : null}
+    </>
   )
 }
