@@ -1,4 +1,4 @@
-import { Component, FolderGit2, GitPullRequest, Home, Settings } from "lucide-react"
+import { Component, FolderGit2, GitPullRequest, Home, LayoutDashboard, Settings } from "lucide-react"
 import { Icons } from "@renderer/components/icons"
 import { Link, useRouterState } from "@tanstack/react-router"
 import { SidebarAccountsMenu } from "@renderer/components/SidebarAccountsMenu"
@@ -22,6 +22,11 @@ const items = [
     title: "Home",
     url: "/",
     icon: Home,
+  },
+  {
+    title: "Dashboard",
+    url: "/dashboard",
+    icon: LayoutDashboard,
   },
   {
     title: "Repos",

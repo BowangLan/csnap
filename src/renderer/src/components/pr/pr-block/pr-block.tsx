@@ -121,11 +121,17 @@ export function PullRequestBlock({ pullRequest }: { pullRequest: GithubPullReque
       />
       <Row
         className={cn(
-          'relative z-10 size-4 shrink-0 justify-center rounded-md bg-muted/40 mr-2',
+          'relative z-10 size-4 shrink-0 justify-center rounded-md mr-2',
+          isActive ? 'bg-emerald-500/10' : 'bg-muted/40',
           pullRequest.isDraft && 'ring-1 ring-inset ring-border/80'
         )}
       >
-        <Icons.PullRequest className="size-4 text-muted-foreground pointer-events-none" />
+        <Icons.PullRequest
+          className={cn(
+            'size-4 pointer-events-none',
+            isActive ? 'text-emerald-500' : 'text-muted-foreground',
+          )}
+        />
         {ciStatus ? (
           <span
             className={cn(
@@ -222,7 +228,7 @@ export function PullRequestBlockRow({ pullRequest }: { pullRequest: GithubPullRe
   const prBugsRow = snapshot.bugs.filter((b) => b.prId === pullRequest.id && b.status !== 'resolved')
   const severityCountsRow = countBugsBySeverity(prBugsRow)
   const hasBugs = prBugsRow.length > 0
-  const [bugsExpanded, setBugsExpanded] = useState(false)
+  const [bugsExpanded, setBugsExpanded] = useState(true)
   const bugsListId = useId()
   const branch = pullRequest.headRefName
   const canCheckout = Boolean(hasLocalPath && branch)
@@ -277,9 +283,20 @@ export function PullRequestBlockRow({ pullRequest }: { pullRequest: GithubPullRe
               className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 disabled:hover:opacity-50 disabled:cursor-not-allowed"
             />
 
-            {/* Col: PR icon + CI dot (fixed) */}
-            <div className="flex-none relative">
-              <Icons.PullRequest className="size-4 text-muted-foreground pointer-events-none flex-none" />
+            {/* Col: PR icon + CI dot (fixed) — emerald when local checkout matches PR head */}
+            <div
+              className={cn(
+                'flex-none relative rounded-[3px]',
+                isActive && 'ring-1 ring-emerald-500/45',
+              )}
+              title={isActive ? `On branch ${pullRequest.headRefName ?? ''}` : undefined}
+            >
+              <Icons.PullRequest
+                className={cn(
+                  'size-4 pointer-events-none flex-none',
+                  isActive ? 'text-emerald-500' : 'text-muted-foreground',
+                )}
+              />
               {ciStatus ? (
                 <span
                   className={cn(
@@ -358,7 +375,7 @@ export function PullRequestBlockRow({ pullRequest }: { pullRequest: GithubPullRe
         <div id={bugsListId} hidden={!bugsExpanded} className="pl-row-indent">
           <List>
             {prBugsRow.map((bug) => (
-              <BugRow key={bug.id} bug={bug} pr={pullRequest} showPr={false} />
+              <BugRow key={bug.id} bug={bug} pr={pullRequest} showPr={false} className='pl-10' />
             ))}
           </List>
         </div>

@@ -195,6 +195,15 @@ export interface LocalRepoGitStatus {
   changedCount: number
   untrackedCount: number
   hasConflicts: boolean
+  /** Lines added vs HEAD (`git diff --numstat HEAD`). */
+  linesAdded: number
+  /** Lines deleted vs HEAD. */
+  linesDeleted: number
+  /**
+   * Heuristic “modified” line overlap: per file, `min(added, deleted)` summed
+   * (same hunk often records both + and − on changed lines).
+   */
+  linesModified: number
   syncedAt: number
   error: string | null
 }

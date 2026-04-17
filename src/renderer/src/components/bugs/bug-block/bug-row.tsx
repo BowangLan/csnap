@@ -20,12 +20,14 @@ import { BugStatusSelect } from './bug-status-select'
 export function BugRow({
   bug,
   pr,
-  showPr = true
+  showPr = true,
+  className,
 }: {
   bug: PrBug
   pr: GithubPullRequest | undefined
   /** When false, hide PR number (and repo in tooltip) — use under a PR sub-group. Default true. */
   showPr?: boolean
+  className?: string
 }): JSX.Element {
   const meta =
     showPr && pr
@@ -36,7 +38,8 @@ export function BugRow({
     <ListItem
       className={cn(
         'group relative py-0.5 h-10',
-        'has-[a[data-transitioning]]:cursor-wait has-[a[data-transitioning]]:opacity-70'
+        'has-[a[data-transitioning]]:cursor-wait has-[a[data-transitioning]]:opacity-70',
+        className,
       )}
     >
       <Link

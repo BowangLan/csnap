@@ -6,6 +6,31 @@ import type { LocalRepoGitStatus } from '../../shared/github'
 
 const execFileAsync = promisify(execFile)
 
+function parseNumstat(output: string): {
+  linesAdded: number
+  linesDeleted: number
+  linesModified: number
+} {
+  let linesAdded = 0
+  let linesDeleted = 0
+  let linesModified = 0
+  for (const line of output.split('\n')) {
+    if (!line.trim()) continue
+    const tabParts = line.split('\t')
+    if (tabParts.length < 3) continue
+    const aStr = tabParts[0]
+    const dStr = tabParts[1]
+    if (aStr === '-' || dStr === '-') continue
+    const a = parseInt(aStr, 10)
+    const d = parseInt(dStr, 10)
+    if (Number.isNaN(a) || Number.isNaN(d)) continue
+    linesAdded += a
+    linesDeleted += d
+    linesModified += Math.min(a, d)
+  }
+  return { linesAdded, linesDeleted, linesModified }
+}
+
 function parseGitStatus(
   nameWithOwner: string,
   localPath: string,
@@ -47,6 +72,9 @@ function parseGitStatus(
     changedCount,
     untrackedCount,
     hasConflicts,
+    linesAdded: 0,
+    linesDeleted: 0,
+    linesModified: 0,
     syncedAt: Date.now(),
     error: null,
   }
@@ -57,11 +85,27 @@ async function fetchOneRepoStatus(
   localPath: string,
 ): Promise<LocalRepoGitStatus> {
   try {
-    const { stdout } = await execFileAsync('git', ['status', '--porcelain=2', '--branch'], {
-      cwd: localPath,
-      env: process.env,
-    })
-    return parseGitStatus(nameWithOwner, localPath, stdout)
+    const [statusResult, numstatResult] = await Promise.allSettled([
+      execFileAsync('git', ['status', '--porcelain=2', '--branch'], {
+        cwd: localPath,
+        env: process.env,
+      }),
+      execFileAsync('git', ['diff', '--numstat', 'HEAD'], {
+        cwd: localPath,
+        env: process.env,
+      }),
+    ])
+
+    if (statusResult.status !== 'fulfilled') {
+      throw statusResult.reason
+    }
+
+    const base = parseGitStatus(nameWithOwner, localPath, statusResult.value.stdout)
+    const numstatOut =
+      numstatResult.status === 'fulfilled' ? numstatResult.value.stdout : ''
+    const { linesAdded, linesDeleted, linesModified } = parseNumstat(numstatOut)
+
+    return { ...base, linesAdded, linesDeleted, linesModified }
   } catch (error) {
     return {
       nameWithOwner,
@@ -72,6 +116,9 @@ async function fetchOneRepoStatus(
       changedCount: 0,
       untrackedCount: 0,
       hasConflicts: false,
+      linesAdded: 0,
+      linesDeleted: 0,
+      linesModified: 0,
       syncedAt: Date.now(),
       error: error instanceof Error ? error.message : String(error),
     }
