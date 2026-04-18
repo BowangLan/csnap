@@ -5,6 +5,7 @@ import {
   EMPTY_GITHUB_SNAPSHOT,
   type BugStatus,
   type GithubAuthStatus,
+  type LocalCommandLog,
   type GithubPullRequest,
   type GithubRepository,
   type GithubSettings,
@@ -26,6 +27,7 @@ import {
   githubRepositoriesTable,
   githubSettingsTable,
   githubSyncStateTable,
+  localCommandLogsTable,
   prBugsTable,
 } from './schema'
 
@@ -37,6 +39,7 @@ const GITHUB_CHANNELS = {
 
 const BUG_STATUS_ALL: BugStatus[] = ['todo', 'resolved', 'ignored', 'in-progress']
 const SINGLETON_ID = 'singleton'
+const COMMAND_LOG_LIMIT = 50
 
 export class GithubStoreService {
   private handlersRegistered = false
@@ -79,6 +82,12 @@ export class GithubStoreService {
       .get()
 
     const bugRows = this.database.db.select().from(prBugsTable).all()
+    const commandLogRows = this.database.db
+      .select()
+      .from(localCommandLogsTable)
+      .orderBy(desc(localCommandLogsTable.startedAt))
+      .limit(COMMAND_LOG_LIMIT)
+      .all()
 
     const sync: GithubSyncState = syncRow
       ? {
@@ -108,6 +117,17 @@ export class GithubStoreService {
       settings,
       sync,
       localRepoStatuses: {},
+      commandLogs: commandLogRows.map((row) => ({
+        id: row.id,
+        scope: row.scope as LocalCommandLog['scope'],
+        command: row.command,
+        args: JSON.parse(row.argsJson) as string[],
+        cwd: row.cwd,
+        status: row.status as LocalCommandLog['status'],
+        output: row.output,
+        startedAt: row.startedAt,
+        finishedAt: row.finishedAt ?? null,
+      })),
     }
   }
 
@@ -302,14 +322,41 @@ export class GithubStoreService {
         })
         .run()
 
-      if (!data.auth.isAuthenticated) {
-        tx.delete(githubPullRequestsTable).run()
-        tx.delete(githubRepositoriesTable).run()
-        tx.delete(prBugsTable).run()
-      }
     })
 
     void this.broadcastSnapshot()
+  }
+
+  commitCommandLog(log: LocalCommandLog): void {
+    this.database.db
+      .insert(localCommandLogsTable)
+      .values({
+        id: log.id,
+        scope: log.scope,
+        command: log.command,
+        argsJson: JSON.stringify(log.args),
+        cwd: log.cwd,
+        status: log.status,
+        output: log.output,
+        startedAt: log.startedAt,
+        finishedAt: log.finishedAt,
+      })
+      .onConflictDoUpdate({
+        target: localCommandLogsTable.id,
+        set: {
+          scope: log.scope,
+          command: log.command,
+          argsJson: JSON.stringify(log.args),
+          cwd: log.cwd,
+          status: log.status,
+          output: log.output,
+          startedAt: log.startedAt,
+          finishedAt: log.finishedAt,
+        },
+      })
+      .run()
+
+    void this.broadcastSnapshot(log)
   }
 
   commitSettings(settings: GithubSettings): void {
@@ -365,10 +412,13 @@ export class GithubStoreService {
     ipcMain.removeHandler(GITHUB_CHANNELS.setBugStatus)
   }
 
-  private broadcastSnapshot(): void {
+  private broadcastSnapshot(commandLog?: LocalCommandLog): void {
     const snapshot = this.getSnapshot()
     for (const win of BrowserWindow.getAllWindows()) {
       win.webContents.send(GITHUB_CHANNELS.changed, snapshot)
+      if (commandLog) {
+        win.webContents.send('github:command-output', commandLog)
+      }
     }
   }
 }

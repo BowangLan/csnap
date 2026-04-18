@@ -87,6 +87,18 @@ CREATE TABLE IF NOT EXISTS pr_bugs (
   reference_id TEXT,
   detected_at INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS local_command_logs (
+  id TEXT PRIMARY KEY NOT NULL,
+  scope TEXT NOT NULL,
+  command TEXT NOT NULL,
+  args_json TEXT NOT NULL,
+  cwd TEXT NOT NULL,
+  status TEXT NOT NULL,
+  output TEXT NOT NULL,
+  started_at INTEGER NOT NULL,
+  finished_at INTEGER
+);
 `
 
 export class AppDatabase {

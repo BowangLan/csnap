@@ -11,7 +11,7 @@ import type { RepoStatusStore } from './db/repo-status-store'
  * are easy to reason about together.
  *
  * Flow:
- *   app ready  →  services init (each runs their own initial fetch)
+ *   app ready  →  services init
  *              →  AppLifecycleService.onAppLoad()
  *                   └─ syncLocalRepos() to populate git statuses immediately
  *
@@ -31,9 +31,7 @@ export class AppLifecycleService {
   ) {}
 
   /**
-   * Call once after all services have finished their initial `init()`.
-   * GitHub data is already fetched by GithubSyncService.init(); we only
-   * need to kick off the local git status sync here.
+   * Call once after the window is created.
    */
   async onAppLoad(): Promise<void> {
     await this.syncLocalRepos()

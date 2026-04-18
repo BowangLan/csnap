@@ -29,6 +29,7 @@ import {
   DEFAULT_EVENT_SOUNDS,
   MACOS_NOTIFICATION_SOUNDS,
   type EventSoundConfig,
+  type LocalCommandLog,
   type GithubRepository,
   type GithubSettings,
   type MacOsNotificationSound,
@@ -430,6 +431,7 @@ function Settings() {
 
       {/* Local Repositories */}
       <LocalRepositoriesCard repositories={snapshot.repositories} localRepoPaths={snapshot.settings.localRepoPaths} />
+      <RecentCommandsCard commandLogs={snapshot.commandLogs} />
 
       <div className="flex justify-end pb-2">
         <Button onClick={handleSave} disabled={isSaving}>
@@ -531,6 +533,64 @@ function LocalRepositoriesCard({
               </div>
             )
           })}
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function RecentCommandsCard({ commandLogs }: { commandLogs: LocalCommandLog[] }) {
+  const localLogs = commandLogs.filter((log) => log.scope === 'local').slice(0, 8)
+
+  if (localLogs.length === 0) return null
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <SectionHeader
+          icon={GitBranch}
+          title="Recent Local Commands"
+          description="Latest local git command output, including commands triggered from the PR list."
+        />
+      </CardHeader>
+      <CardContent className="pt-0">
+        <Separator />
+        <div className="divide-y">
+          {localLogs.map((log) => (
+            <div key={log.id} className="space-y-2 py-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium">
+                    {log.command} {log.args.join(' ')}
+                  </p>
+                  <p className="truncate text-xs text-muted-foreground">{log.cwd}</p>
+                </div>
+                <span
+                  className={`shrink-0 text-xs font-medium ${
+                    log.status === 'failed'
+                      ? 'text-destructive'
+                      : log.status === 'succeeded'
+                        ? 'text-emerald-600 dark:text-emerald-400'
+                        : 'text-muted-foreground'
+                  }`}
+                >
+                  {log.status === 'running'
+                    ? 'Running'
+                    : log.status === 'succeeded'
+                      ? 'Succeeded'
+                      : 'Failed'}
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {formatStatusTimestamp(log.finishedAt ?? log.startedAt)}
+              </p>
+              {log.output ? (
+                <pre className="overflow-x-auto rounded-md border bg-muted/40 p-2 text-xs whitespace-pre-wrap break-words">
+                  {log.output}
+                </pre>
+              ) : null}
+            </div>
+          ))}
         </div>
       </CardContent>
     </Card>

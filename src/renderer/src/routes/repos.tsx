@@ -2,10 +2,12 @@ import { createFileRoute } from '@tanstack/react-router'
 import { formatDistanceToNow } from 'date-fns'
 import { RefreshCw } from 'lucide-react'
 import { useGithubSnapshot } from '@renderer/hooks/use-github-snapshot'
+import { Alert, AlertDescription, AlertTitle } from '@renderer/components/ui/alert'
 import { Button } from '@renderer/components/ui/button'
 import { Badge } from '@renderer/components/ui/badge'
 import { Skeleton } from '@renderer/components/ui/skeleton'
 import { Spinner } from '@renderer/components/ui/spinner'
+import { isGithubInitialLoading, isGithubRateLimited } from '@renderer/lib/github-sync'
 import {
   Table,
   TableBody,
@@ -21,8 +23,9 @@ export const Route = createFileRoute('/repos')({
 
 function ReposPage() {
   const snapshot = useGithubSnapshot()
-  const isInitialLoading = snapshot.sync.isRefreshing && snapshot.sync.lastRefreshedAt === null
+  const isInitialLoading = isGithubInitialLoading(snapshot)
   const isRefreshing = snapshot.sync.isRefreshing && !isInitialLoading
+  const isRateLimited = isGithubRateLimited(snapshot)
 
   return (
     <div className="flex flex-col gap-4 p-4">
@@ -47,7 +50,10 @@ function ReposPage() {
         ) : null}
 
         {snapshot.sync.lastError ? (
-          <p className="text-sm text-destructive">{snapshot.sync.lastError}</p>
+          <Alert className={isRateLimited ? 'border-amber-500/30 bg-amber-500/10' : ''}>
+            <AlertTitle>{isRateLimited ? 'GitHub rate limit reached' : 'Refresh failed'}</AlertTitle>
+            <AlertDescription>{snapshot.sync.lastError}</AlertDescription>
+          </Alert>
         ) : null}
 
         {isInitialLoading ? (

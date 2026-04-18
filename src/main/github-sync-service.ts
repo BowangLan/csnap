@@ -1,5 +1,6 @@
 import { app, dialog, ipcMain, Notification, shell } from 'electron'
 import { execFile, spawn } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import { promisify } from 'node:util'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
@@ -10,6 +11,7 @@ import {
   type EventSoundConfig,
   type GithubAccount,
   type GithubAuthStatus,
+  type LocalCommandLog,
   type MacOsNotificationSound,
   type GithubPullRequest,
   type GithubPullRequestComment,
@@ -650,8 +652,8 @@ export class GithubSyncService {
     }
 
     this.registerIpcHandlers()
-    await this.refresh()
     this.schedulePoll()
+    void this.refresh()
   }
 
   async shutdown(): Promise<void> {
@@ -1532,10 +1534,7 @@ export class GithubSyncService {
     if (!localPath) {
       throw new Error(`No local path configured for ${nameWithOwner}. Set one in Settings > Local Repositories.`)
     }
-    await execFileAsync('git', ['checkout', branch], {
-      cwd: localPath,
-      env: process.env,
-    })
+    await this.runLoggedLocalCommand('git', ['checkout', branch], localPath)
   }
 
   private async pickFolder(): Promise<string | null> {
@@ -1576,6 +1575,50 @@ export class GithubSyncService {
       }
 
       throw error
+    }
+  }
+
+  private async runLoggedLocalCommand(
+    command: string,
+    args: string[],
+    cwd: string,
+  ): Promise<string> {
+    const baseLog: LocalCommandLog = {
+      id: randomUUID(),
+      scope: 'local',
+      command,
+      args,
+      cwd,
+      status: 'running',
+      output: '',
+      startedAt: Date.now(),
+      finishedAt: null,
+    }
+    this.githubStore.commitCommandLog(baseLog)
+
+    try {
+      const result = await execFileAsync(command, args, {
+        cwd,
+        env: process.env,
+      })
+      const output = [result.stdout, result.stderr].filter(Boolean).join('\n').trim()
+      this.githubStore.commitCommandLog({
+        ...baseLog,
+        status: 'succeeded',
+        output,
+        finishedAt: Date.now(),
+      })
+      return output
+    } catch (error) {
+      const e = error as NodeJS.ErrnoException & { stdout?: string; stderr?: string }
+      const output = [e.stdout, e.stderr, e.message].filter(Boolean).join('\n').trim()
+      this.githubStore.commitCommandLog({
+        ...baseLog,
+        status: 'failed',
+        output,
+        finishedAt: Date.now(),
+      })
+      throw new Error(output || `${command} ${args.join(' ')} failed.`)
     }
   }
 }

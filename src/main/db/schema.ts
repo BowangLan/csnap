@@ -83,6 +83,18 @@ export const prBugsTable = sqliteTable('pr_bugs', {
   detectedAt: integer('detected_at').notNull(),
 })
 
+export const localCommandLogsTable = sqliteTable('local_command_logs', {
+  id: text('id').primaryKey(),
+  scope: text('scope').notNull(),
+  command: text('command').notNull(),
+  argsJson: text('args_json').notNull(),
+  cwd: text('cwd').notNull(),
+  status: text('status').notNull(),
+  output: text('output').notNull(),
+  startedAt: integer('started_at').notNull(),
+  finishedAt: integer('finished_at'),
+})
+
 export const schema = {
   todosTable,
   githubPullRequestsTable,
@@ -91,6 +103,7 @@ export const schema = {
   githubAuthStateTable,
   githubSettingsTable,
   prBugsTable,
+  localCommandLogsTable,
 }
 
 export type AppSchema = typeof schema

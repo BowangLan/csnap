@@ -4,6 +4,8 @@ import { useGithubSnapshot } from '@renderer/hooks/use-github-snapshot'
 import { Button } from '@renderer/components/ui/button'
 import { Skeleton } from '@renderer/components/ui/skeleton'
 import { Spinner } from '@renderer/components/ui/spinner'
+import { Alert, AlertDescription, AlertTitle } from '@renderer/components/ui/alert'
+import { isGithubInitialLoading, isGithubRateLimited } from '@renderer/lib/github-sync'
 import {
   Card,
   CardContent,
@@ -19,8 +21,9 @@ export const Route = createFileRoute('/')({
 
 function Index() {
   const snapshot = useGithubSnapshot()
-  const isInitialLoading = snapshot.sync.isRefreshing && snapshot.sync.lastRefreshedAt === null
+  const isInitialLoading = isGithubInitialLoading(snapshot)
   const isRefreshing = snapshot.sync.isRefreshing && !isInitialLoading
+  const isRateLimited = isGithubRateLimited(snapshot)
 
   return (
     <div className="p-4 max-w-4xl space-y-6">
@@ -111,10 +114,16 @@ function Index() {
           <CardDescription>Current state of the GitHub sync service.</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-2">
+          {isRateLimited ? (
+            <Alert className="sm:col-span-2 border-amber-500/30 bg-amber-500/10">
+              <AlertTitle>GitHub rate limit reached</AlertTitle>
+              <AlertDescription>{snapshot.sync.lastError}</AlertDescription>
+            </Alert>
+          ) : null}
           {isRefreshing ? (
             <div className="sm:col-span-2 flex items-center gap-2 rounded-lg border bg-background/70 px-3 py-2 text-sm text-muted-foreground">
               <Spinner className="size-4" />
-              Refreshing GitHub data...
+              Refreshing GitHub data while showing cached results...
             </div>
           ) : null}
           <div className="flex items-center gap-2">

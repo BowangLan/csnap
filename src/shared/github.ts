@@ -186,6 +186,18 @@ export interface GithubSyncState {
   lastError: string | null
 }
 
+export interface LocalCommandLog {
+  id: string
+  scope: 'local'
+  command: string
+  args: string[]
+  cwd: string
+  status: 'running' | 'succeeded' | 'failed'
+  output: string
+  startedAt: number
+  finishedAt: number | null
+}
+
 export interface LocalRepoGitStatus {
   nameWithOwner: string
   localPath: string
@@ -216,6 +228,7 @@ export interface GithubSnapshot {
   settings: GithubSettings
   sync: GithubSyncState
   localRepoStatuses: Record<string, LocalRepoGitStatus>
+  commandLogs: LocalCommandLog[]
 }
 
 export const DEFAULT_EVENT_SOUNDS: GithubSettings['eventSounds'] = {
@@ -251,4 +264,5 @@ export const EMPTY_GITHUB_SNAPSHOT: GithubSnapshot = {
     lastError: null,
   },
   localRepoStatuses: {},
+  commandLogs: [],
 }

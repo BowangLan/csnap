@@ -4,6 +4,7 @@ import { TODO_CHANNELS, REPO_STATUS_CHANNELS } from '../shared/ipc/channels'
 import {
   type BugStatus,
   type GithubAccount,
+  type LocalCommandLog,
   type GithubSettings,
   type MacOsNotificationSound,
   type PrNotificationEvent,
@@ -23,10 +24,12 @@ const GITHUB_CHANNELS = {
   setRepoPath: 'github:set-repo-path',
   checkoutBranch: 'github:checkout-branch',
   pickFolder: 'github:pick-folder',
+  commandOutput: 'github:command-output',
 } as const
 const todoListeners = new Set<() => void>()
 const repoStatusListeners = new Set<() => void>()
 const githubListeners = new Set<() => void>()
+const githubCommandOutputListeners = new Set<(log: LocalCommandLog) => void>()
 
 const notifyListeners = (listeners: Set<() => void>): void => {
   for (const listener of listeners) {
@@ -36,6 +39,11 @@ const notifyListeners = (listeners: Set<() => void>): void => {
 
 ipcRenderer.on(TODO_CHANNELS.changed, () => notifyListeners(todoListeners))
 ipcRenderer.on(GITHUB_CHANNELS.changed, () => notifyListeners(githubListeners))
+ipcRenderer.on(GITHUB_CHANNELS.commandOutput, (_event, payload: LocalCommandLog) => {
+  for (const listener of githubCommandOutputListeners) {
+    listener(payload)
+  }
+})
 ipcRenderer.on(REPO_STATUS_CHANNELS.changed, () => notifyListeners(repoStatusListeners))
 
 const api = {
@@ -73,6 +81,12 @@ const api = {
       githubListeners.add(listener)
       return () => {
         githubListeners.delete(listener)
+      }
+    },
+    subscribeCommandOutput: (listener: (log: LocalCommandLog) => void) => {
+      githubCommandOutputListeners.add(listener)
+      return () => {
+        githubCommandOutputListeners.delete(listener)
       }
     },
     refresh: () => ipcRenderer.invoke(GITHUB_CHANNELS.refresh),

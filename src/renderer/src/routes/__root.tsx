@@ -1,6 +1,7 @@
 import React from 'react'
 import { createRootRoute, Outlet, useLocation, useRouterState } from '@tanstack/react-router'
 import { TanStackRouterDevtools } from '@tanstack/react-router-devtools'
+import { toast } from 'sonner'
 import { Toaster } from '@renderer/components/ui/sonner'
 import { SidebarProvider, SidebarInset } from '@renderer/components/ui/sidebar'
 import { AppSidebar } from '@renderer/components/AppSidebar'
@@ -66,6 +67,32 @@ const RootLayout = () => {
     () => breadcrumbLabelFromPath(location.pathname, snapshot.pullRequests, snapshot.bugs),
     [location.pathname, snapshot.pullRequests, snapshot.bugs],
   )
+
+  React.useEffect(() => {
+    return window.api.github.subscribeCommandOutput((log) => {
+      const description = log.output || `${log.command} ${log.args.join(' ')}`
+      if (log.status === 'running') {
+        toast.loading(`${log.command} ${log.args.join(' ')}`, {
+          description: log.cwd,
+          id: log.id,
+        })
+        return
+      }
+
+      toast.dismiss(log.id)
+      const title = `${log.command} ${log.args.join(' ')}`
+      if (log.status === 'succeeded') {
+        toast.success(title, {
+          description,
+        })
+        return
+      }
+
+      toast.error(title, {
+        description,
+      })
+    })
+  }, [])
 
   return (
     <SidebarProvider className="h-svh min-h-0 overflow-hidden">

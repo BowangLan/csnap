@@ -4,6 +4,7 @@ import type {
   GithubAccount,
   GithubSettings,
   GithubSnapshot,
+  LocalCommandLog,
   LocalRepoGitStatus,
   MacOsNotificationSound,
   PrNotificationEvent,
@@ -33,6 +34,7 @@ declare global {
       github: {
         getSnapshot: () => Promise<GithubSnapshot>
         subscribeChanged: (listener: () => void) => () => void
+        subscribeCommandOutput: (listener: (log: LocalCommandLog) => void) => () => void
         refresh: () => Promise<GithubSnapshot>
         updateSettings: (partial: Partial<GithubSettings>) => Promise<GithubSnapshot>
         setBugStatus: (

@@ -29,6 +29,8 @@ import {
   SEVERITY_STYLES,
 } from '@renderer/components/bugs/bug-block/bug-severity-badge'
 import { useGithubSnapshot } from '@renderer/hooks/use-github-snapshot'
+import { Alert, AlertDescription, AlertTitle } from '@renderer/components/ui/alert'
+import { isGithubInitialLoading, isGithubRateLimited } from '@renderer/lib/github-sync'
 import { deriveCiStatus } from '@renderer/lib/pr-ci'
 import { cn } from '@renderer/lib/utils'
 import type { GithubPullRequest, PrBug } from '../../../shared/github'
@@ -179,9 +181,9 @@ function computeStats(
 
 function Dashboard(): JSX.Element {
   const snapshot = useGithubSnapshot()
-  const isInitialLoading =
-    snapshot.sync.isRefreshing && snapshot.sync.lastRefreshedAt === null
+  const isInitialLoading = isGithubInitialLoading(snapshot)
   const isRefreshing = snapshot.sync.isRefreshing && !isInitialLoading
+  const isRateLimited = isGithubRateLimited(snapshot)
 
   const stats = useMemo(
     () => computeStats(snapshot.pullRequests, snapshot.bugs, Date.now()),
@@ -197,6 +199,12 @@ function Dashboard(): JSX.Element {
 
   return (
     <div className="flex min-w-0 flex-col gap-6">
+      {isRateLimited ? (
+        <Alert className="border-amber-500/30 bg-amber-500/10">
+          <AlertTitle>GitHub rate limit reached</AlertTitle>
+          <AlertDescription>{snapshot.sync.lastError}</AlertDescription>
+        </Alert>
+      ) : null}
       <DashboardHeader
         login={snapshot.auth.activeLogin}
         isRefreshing={isRefreshing}

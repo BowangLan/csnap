@@ -77,19 +77,18 @@ app.whenReady().then(async () => {
     void shell.openExternal(url)
   })
 
-  // Initialise all services in dependency order:
-  //   1. githubStore must be ready before githubSyncService.init() reads settings
-  //   2. githubSyncService.init() performs the first full GitHub API refresh
+  // Initialise IPC-backed services before creating the window so the renderer
+  // can paint from persisted SQLite state immediately.
   await todoStore.init()
   await githubStore.init()
   await githubSyncService.init()
   await repoStatusStore.init()
   lifecycle.registerIpcHandlers()
 
-  // After all services are ready, sync local git statuses for the first time.
-  await lifecycle.onAppLoad()
-
   createWindow()
+
+  // Local git status sync can happen after first paint.
+  void lifecycle.onAppLoad()
 
   app.on('activate', function () {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
