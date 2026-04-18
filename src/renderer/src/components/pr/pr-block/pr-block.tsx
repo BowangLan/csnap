@@ -282,7 +282,6 @@ export function PullRequestBlockRow({ pullRequest }: { pullRequest: GithubPullRe
                 setBugsExpanded((v) => !v)
                 return false
               }}
-              className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 disabled:hover:opacity-50 disabled:cursor-not-allowed"
             />
 
             {/* Col: PR icon + CI dot (fixed) — emerald when local checkout matches PR head */}
@@ -318,7 +317,7 @@ export function PullRequestBlockRow({ pullRequest }: { pullRequest: GithubPullRe
             <Link
               to="/prs/$prId"
               params={{ prId: pullRequest.id }}
-              className="flex-1 select-none min-w-0 truncate text-sm font-medium hover:underline"
+              className="flex-1 -ml-3 select-none min-w-0 truncate text-sm font-medium hover:underline"
               title={`${pullRequest.title} — ${meta}`}
               onClick={(e) => {
                 e.stopPropagation()
@@ -382,7 +381,7 @@ export function PullRequestBlockRow({ pullRequest }: { pullRequest: GithubPullRe
         <div id={bugsListId} hidden={!bugsExpanded} className="pl-row-indent">
           <List>
             {prBugsRow.map((bug) => (
-              <BugRow key={bug.id} bug={bug} pr={pullRequest} showPr={false} className='pl-10' />
+              <BugRow key={bug.id} bug={bug} pr={pullRequest} showPr={false} />
             ))}
           </List>
         </div>

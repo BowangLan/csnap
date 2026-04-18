@@ -57,7 +57,7 @@ export function PullRequestsRepoSection({ group }: { group: PullRequestsRepoGrou
         </div>
       </ListItem>
       <div id={listId} hidden={!expanded}>
-        <List>
+        <List className="pl-row-indent">
           {group.pullRequests.map((pullRequest) => (
             <PullRequestBlockRow key={pullRequest.id} pullRequest={pullRequest} />
           ))}
