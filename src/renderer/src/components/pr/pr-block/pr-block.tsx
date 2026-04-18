@@ -256,19 +256,16 @@ export function PullRequestBlockRow({ pullRequest }: { pullRequest: GithubPullRe
         <ContextMenuTrigger asChild>
           <ListItem
             className={cn(
-              'group relative h-10 py-0',
+              'group relative h-10 py-0 bg-muted/40',
               'has-[a[data-transitioning]]:cursor-wait has-[a[data-transitioning]]:opacity-70',
             )}
+            onClick={(e) => {
+              e.stopPropagation()
+              e.preventDefault()
+              setBugsExpanded((v) => !v)
+              return false
+            }}
           >
-            {!hasBugs ? (
-              <Link
-                to="/prs/$prId"
-                params={{ prId: pullRequest.id }}
-                className="absolute inset-0 z-0 rounded-lg"
-                aria-label={`View pull request ${pullRequest.number}`}
-              />
-            ) : null}
-
             {/* Col: expand toggle (fixed) */}
             <ListSectionExpandToggle
               expanded={bugsExpanded}
@@ -279,7 +276,12 @@ export function PullRequestBlockRow({ pullRequest }: { pullRequest: GithubPullRe
                   : 'Show bugs for this pull request'
               }
               srOnlyLabel={`${bugsExpanded ? 'Collapse' : 'Expand'} bugs for pull request ${pullRequest.title}`}
-              onClick={() => setBugsExpanded((v) => !v)}
+              onClick={(e) => {
+                e.stopPropagation()
+                e.preventDefault()
+                setBugsExpanded((v) => !v)
+                return false
+              }}
               className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 disabled:hover:opacity-50 disabled:cursor-not-allowed"
             />
 
@@ -308,17 +310,22 @@ export function PullRequestBlockRow({ pullRequest }: { pullRequest: GithubPullRe
             </div>
 
             {/* Col: #Number (fixed) */}
-            <div className="font-normal text-foreground/70 text-sm font-mono flex-none w-12 tabular-nums">
+            <div className="font-normal select-none text-foreground/70 text-sm font-mono flex-none w-12 tabular-nums">
               #{pullRequest.number}
             </div>
 
             {/* Col: Title (flexible — fills middle so other columns align) */}
-            <div
-              className="flex-1 min-w-0 truncate text-sm font-medium pointer-events-none"
+            <Link
+              to="/prs/$prId"
+              params={{ prId: pullRequest.id }}
+              className="flex-1 select-none min-w-0 truncate text-sm font-medium hover:underline"
               title={`${pullRequest.title} — ${meta}`}
+              onClick={(e) => {
+                e.stopPropagation()
+              }}
             >
               {pullRequest.title}
-            </div>
+            </Link>
 
             {/* Col: Branch (fixed) */}
             <div className="relative z-10 flex flex-none w-56 min-w-0 overflow-hidden items-center">
