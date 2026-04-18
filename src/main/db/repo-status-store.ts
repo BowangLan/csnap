@@ -1,5 +1,6 @@
 import { BrowserWindow, ipcMain } from 'electron'
 import { execFile } from 'node:child_process'
+import { performance } from 'node:perf_hooks'
 import { promisify } from 'node:util'
 import { REPO_STATUS_CHANNELS } from '../../shared/ipc/channels'
 import type { LocalRepoGitStatus } from '../../shared/github'
@@ -85,6 +86,7 @@ async function fetchOneRepoStatus(
   localPath: string,
 ): Promise<LocalRepoGitStatus> {
   try {
+    const t0 = performance.now()
     const [statusResult, numstatResult] = await Promise.allSettled([
       execFileAsync('git', ['status', '--porcelain=2', '--branch'], {
         cwd: localPath,
@@ -95,6 +97,10 @@ async function fetchOneRepoStatus(
         env: process.env,
       }),
     ])
+    const elapsedMs = performance.now() - t0
+    console.log(
+      `[repo-status] git status+numstat ${nameWithOwner} ${elapsedMs.toFixed(1)}ms (status=${statusResult.status}, numstat=${numstatResult.status})`,
+    )
 
     if (statusResult.status !== 'fulfilled') {
       throw statusResult.reason
