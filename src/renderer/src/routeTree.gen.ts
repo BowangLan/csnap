@@ -16,6 +16,7 @@ import { Route as PrsRouteImport } from './routes/prs'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as ComponentsRouteImport } from './routes/components'
 import { Route as BugsRouteImport } from './routes/bugs'
+import { Route as BranchesRouteImport } from './routes/branches'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as PrsIndexRouteImport } from './routes/prs.index'
@@ -58,6 +59,11 @@ const BugsRoute = BugsRouteImport.update({
   path: '/bugs',
   getParentRoute: () => rootRouteImport,
 } as any)
+const BranchesRoute = BranchesRouteImport.update({
+  id: '/branches',
+  path: '/branches',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AboutRoute = AboutRouteImport.update({
   id: '/about',
   path: '/about',
@@ -92,6 +98,7 @@ const BugsBugIdRoute = BugsBugIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/branches': typeof BranchesRoute
   '/bugs': typeof BugsRouteWithChildren
   '/components': typeof ComponentsRoute
   '/dashboard': typeof DashboardRoute
@@ -107,6 +114,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/branches': typeof BranchesRoute
   '/components': typeof ComponentsRoute
   '/dashboard': typeof DashboardRoute
   '/repos': typeof ReposRoute
@@ -121,6 +129,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/branches': typeof BranchesRoute
   '/bugs': typeof BugsRouteWithChildren
   '/components': typeof ComponentsRoute
   '/dashboard': typeof DashboardRoute
@@ -138,6 +147,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/about'
+    | '/branches'
     | '/bugs'
     | '/components'
     | '/dashboard'
@@ -153,6 +163,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/about'
+    | '/branches'
     | '/components'
     | '/dashboard'
     | '/repos'
@@ -166,6 +177,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/about'
+    | '/branches'
     | '/bugs'
     | '/components'
     | '/dashboard'
@@ -182,6 +194,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AboutRoute: typeof AboutRoute
+  BranchesRoute: typeof BranchesRoute
   BugsRoute: typeof BugsRouteWithChildren
   ComponentsRoute: typeof ComponentsRoute
   DashboardRoute: typeof DashboardRoute
@@ -240,6 +253,13 @@ declare module '@tanstack/react-router' {
       path: '/bugs'
       fullPath: '/bugs'
       preLoaderRoute: typeof BugsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/branches': {
+      id: '/branches'
+      path: '/branches'
+      fullPath: '/branches'
+      preLoaderRoute: typeof BranchesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/about': {
@@ -314,6 +334,7 @@ const PrsRouteWithChildren = PrsRoute._addFileChildren(PrsRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
+  BranchesRoute: BranchesRoute,
   BugsRoute: BugsRouteWithChildren,
   ComponentsRoute: ComponentsRoute,
   DashboardRoute: DashboardRoute,
