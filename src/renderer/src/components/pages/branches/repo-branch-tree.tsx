@@ -84,7 +84,14 @@ export function RepoBranchTree({ tree }: { tree: RepoTreeModel }): JSX.Element {
       {/* Tree body */}
       {expanded ? (
         <div className="px-4 py-3">
-          <BranchTreeNode node={tree.rootNode} isLast isRoot defaultBranch={tree.defaultBranch} />
+          <BranchTreeNode
+            node={tree.rootNode}
+            isLast
+            isRoot
+            defaultBranch={tree.defaultBranch}
+            nameWithOwner={tree.nameWithOwner}
+            hasLocalClone={hasLocalClone}
+          />
         </div>
       ) : null}
     </section>

@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Link } from '@tanstack/react-router'
 import { formatDistanceToNow } from 'date-fns'
+import { toast } from 'sonner'
 import {
   ArrowDownToLine,
   ChevronDown,
@@ -24,20 +25,42 @@ function ReadinessBadgeIcon({ readiness, mergeable }: { readiness: BranchMergeRe
   return null
 }
 
-function BranchNodeCard({ node, defaultBranch }: { node: BranchNode; defaultBranch: string }): JSX.Element {
+function BranchNodeCard({
+  node,
+  defaultBranch,
+  nameWithOwner,
+  hasLocalClone,
+}: {
+  node: BranchNode
+  defaultBranch: string
+  nameWithOwner: string
+  hasLocalClone: boolean
+}): JSX.Element {
   const { pr, readiness, isCurrentBranch, branchName, baseBranchName } = node
   const display = getReadinessDisplay(readiness)
   const showBase = pr && baseBranchName && baseBranchName !== defaultBranch
 
-  return (
-    <div
-      className={cn(
-        'group relative flex min-w-0 items-center gap-2.5 rounded-lg border px-3 py-2 transition-colors',
-        isCurrentBranch
-          ? 'border-emerald-500/40 bg-emerald-500/5 ring-1 ring-emerald-500/20'
-          : 'border-border/60 bg-card hover:bg-muted/40',
-      )}
-    >
+  const shell = (className: string, children: ReactNode): JSX.Element =>
+    pr ? (
+      <Link
+        to="/prs/$prId"
+        params={{ prId: pr.id }}
+        className={cn(className, 'cursor-pointer no-underline text-inherit')}
+      >
+        {children}
+      </Link>
+    ) : (
+      <div className={className}>{children}</div>
+    )
+
+  return shell(
+    cn(
+      'group relative flex min-w-0 items-center gap-2.5 rounded-lg border px-3 py-2 transition-colors',
+      isCurrentBranch
+        ? 'border-emerald-500/40 bg-emerald-500/5 ring-1 ring-emerald-500/20'
+        : 'border-border/60 bg-card hover:bg-muted/40',
+    ),
+    <>
       {/* Status dot */}
       <Tooltip>
         <TooltipTrigger asChild>
@@ -119,20 +142,51 @@ function BranchNodeCard({ node, defaultBranch }: { node: BranchNode; defaultBran
 
             {/* Actions */}
             <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-              <Link
-                to="/prs/$prId"
-                params={{ prId: pr.id }}
-                className="rounded p-0.5 text-muted-foreground hover:text-foreground"
-                title="View PR details"
+              <button
+                type="button"
+                aria-label={
+                  isCurrentBranch
+                    ? `Already on branch ${branchName}`
+                    : hasLocalClone
+                      ? `Checkout branch ${branchName}`
+                      : 'Checkout unavailable — no local clone'
+                }
+                disabled={!hasLocalClone || isCurrentBranch}
+                title={
+                  isCurrentBranch
+                    ? `On branch ${branchName}`
+                    : hasLocalClone
+                      ? `Checkout ${branchName}`
+                      : `No local clone for ${nameWithOwner} — set path in Settings`
+                }
+                className={cn(
+                  'relative z-10 rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground',
+                  'disabled:pointer-events-none disabled:opacity-30',
+                  isCurrentBranch && hasLocalClone && 'text-emerald-600 dark:text-emerald-400',
+                )}
+                onClick={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  void (async () => {
+                    try {
+                      await window.api.github.checkoutBranch(nameWithOwner, branchName)
+                      toast.success(`Checked out ${branchName}`)
+                      void window.api.repoStatuses.syncAll()
+                    } catch (err) {
+                      toast.error(err instanceof Error ? err.message : 'Checkout failed')
+                    }
+                  })()
+                }}
               >
-                <GitPullRequest className="size-3" />
-              </Link>
+                <GitBranch className="size-3" />
+              </button>
               <a
                 href={pr.url}
-                className="rounded p-0.5 text-muted-foreground hover:text-foreground"
+                className="relative z-10 rounded p-0.5 text-muted-foreground hover:text-foreground"
                 title="Open on GitHub"
                 onClick={(e) => {
                   e.preventDefault()
+                  e.stopPropagation()
                   window.api.shell.openExternal(pr.url)
                 }}
               >
@@ -142,7 +196,7 @@ function BranchNodeCard({ node, defaultBranch }: { node: BranchNode; defaultBran
           </>
         ) : null}
       </div>
-    </div>
+    </>,
   )
 }
 
@@ -151,11 +205,15 @@ export function BranchTreeNode({
   isLast,
   isRoot = false,
   defaultBranch,
+  nameWithOwner,
+  hasLocalClone,
 }: {
   node: BranchNode
   isLast: boolean
   isRoot?: boolean
   defaultBranch: string
+  nameWithOwner: string
+  hasLocalClone: boolean
 }): JSX.Element {
   const hasChildren = node.children.length > 0
   const [expanded, setExpanded] = useState(true)
@@ -190,6 +248,8 @@ export function BranchTreeNode({
                 node={child}
                 isLast={i === node.children.length - 1}
                 defaultBranch={defaultBranch}
+                nameWithOwner={nameWithOwner}
+                hasLocalClone={hasLocalClone}
               />
             ))}
           </div>
@@ -231,7 +291,12 @@ export function BranchTreeNode({
             <div className="w-4 shrink-0" />
           )}
           <div className="min-w-0 flex-1">
-            <BranchNodeCard node={node} defaultBranch={defaultBranch} />
+            <BranchNodeCard
+              node={node}
+              defaultBranch={defaultBranch}
+              nameWithOwner={nameWithOwner}
+              hasLocalClone={hasLocalClone}
+            />
           </div>
         </div>
 
@@ -244,6 +309,8 @@ export function BranchTreeNode({
                 node={child}
                 isLast={i === node.children.length - 1}
                 defaultBranch={defaultBranch}
+                nameWithOwner={nameWithOwner}
+                hasLocalClone={hasLocalClone}
               />
             ))}
           </div>
