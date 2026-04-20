@@ -199,7 +199,7 @@ export function BranchTreeNode({
   }
 
   return (
-    <div className="relative flex">
+    <div className="relative flex min-w-0">
       {/* Tree connector lines */}
       <div className="relative flex w-6 shrink-0 flex-col items-center">
         {/* Vertical line from parent */}
@@ -237,7 +237,7 @@ export function BranchTreeNode({
 
         {/* Render children recursively */}
         {hasChildren && expanded ? (
-          <div className="ml-2 mt-0.5">
+          <div className="mt-0.5 min-w-0 ml-2">
             {node.children.map((child, i) => (
               <BranchTreeNode
                 key={child.id}
