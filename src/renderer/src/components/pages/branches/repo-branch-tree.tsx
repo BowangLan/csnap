@@ -10,6 +10,7 @@ import { getReadinessDisplay } from './readiness-label'
 function ReadinessSummary({ counts }: { counts: RepoTreeModel['readyCounts'] }): JSX.Element {
   const items = [
     { key: 'ready' as const, count: counts.ready + counts.approved },
+    { key: 'needs-rebase' as const, count: counts['needs-rebase'] },
     { key: 'ci-pending' as const, count: counts['ci-pending'] },
     { key: 'review-pending' as const, count: counts['review-pending'] },
     { key: 'changes-requested' as const, count: counts['changes-requested'] },
@@ -83,7 +84,7 @@ export function RepoBranchTree({ tree }: { tree: RepoTreeModel }): JSX.Element {
       {/* Tree body */}
       {expanded ? (
         <div className="px-4 py-3">
-          <BranchTreeNode node={tree.rootNode} isLast isRoot />
+          <BranchTreeNode node={tree.rootNode} isLast isRoot defaultBranch={tree.defaultBranch} />
         </div>
       ) : null}
     </section>

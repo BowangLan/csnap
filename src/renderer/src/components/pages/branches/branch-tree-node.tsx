@@ -2,22 +2,32 @@ import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { formatDistanceToNow } from 'date-fns'
 import {
+  ArrowDownToLine,
   ChevronDown,
   ChevronRight,
   ExternalLink,
   GitBranch,
   GitMerge,
   GitPullRequest,
+  RefreshCw,
 } from 'lucide-react'
 import { Badge } from '@renderer/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/components/ui/tooltip'
 import { cn } from '@renderer/lib/utils'
-import type { BranchNode } from './types'
+import type { BranchMergeReadiness, BranchNode } from './types'
 import { getReadinessDisplay } from './readiness-label'
 
-function BranchNodeCard({ node }: { node: BranchNode }): JSX.Element {
-  const { pr, readiness, isCurrentBranch, branchName } = node
+function ReadinessBadgeIcon({ readiness, mergeable }: { readiness: BranchMergeReadiness; mergeable: string | null }): JSX.Element | null {
+  if (readiness === 'ready' && mergeable === 'MERGEABLE') return <GitMerge className="mr-0.5 size-2.5" />
+  if (readiness === 'needs-rebase') return <RefreshCw className="mr-0.5 size-2.5" />
+  if (readiness === 'conflicts') return <ArrowDownToLine className="mr-0.5 size-2.5" />
+  return null
+}
+
+function BranchNodeCard({ node, defaultBranch }: { node: BranchNode; defaultBranch: string }): JSX.Element {
+  const { pr, readiness, isCurrentBranch, branchName, baseBranchName } = node
   const display = getReadinessDisplay(readiness)
+  const showBase = pr && baseBranchName && baseBranchName !== defaultBranch
 
   return (
     <div
@@ -64,6 +74,12 @@ function BranchNodeCard({ node }: { node: BranchNode }): JSX.Element {
               HEAD
             </Badge>
           ) : null}
+          {showBase ? (
+            <span className="hidden items-center gap-0.5 text-[10px] text-muted-foreground/50 sm:flex" title={`Based on ${baseBranchName}`}>
+              <ArrowDownToLine className="size-2.5" />
+              <span className="font-mono">{baseBranchName}</span>
+            </span>
+          ) : null}
         </div>
 
         {pr ? (
@@ -92,9 +108,7 @@ function BranchNodeCard({ node }: { node: BranchNode }): JSX.Element {
               size="sm"
               className={cn('font-medium text-[10px]', display.bgClass, display.textClass)}
             >
-              {pr.mergeable === 'MERGEABLE' && readiness === 'ready' ? (
-                <GitMerge className="mr-0.5 size-2.5" />
-              ) : null}
+              <ReadinessBadgeIcon readiness={readiness} mergeable={pr.mergeable} />
               {display.shortLabel}
             </Badge>
 
@@ -136,10 +150,12 @@ export function BranchTreeNode({
   node,
   isLast,
   isRoot = false,
+  defaultBranch,
 }: {
   node: BranchNode
   isLast: boolean
   isRoot?: boolean
+  defaultBranch: string
 }): JSX.Element {
   const hasChildren = node.children.length > 0
   const [expanded, setExpanded] = useState(true)
@@ -173,6 +189,7 @@ export function BranchTreeNode({
                 key={child.id}
                 node={child}
                 isLast={i === node.children.length - 1}
+                defaultBranch={defaultBranch}
               />
             ))}
           </div>
@@ -214,7 +231,7 @@ export function BranchTreeNode({
             <div className="w-4 shrink-0" />
           )}
           <div className="min-w-0 flex-1">
-            <BranchNodeCard node={node} />
+            <BranchNodeCard node={node} defaultBranch={defaultBranch} />
           </div>
         </div>
 
@@ -226,6 +243,7 @@ export function BranchTreeNode({
                 key={child.id}
                 node={child}
                 isLast={i === node.children.length - 1}
+                defaultBranch={defaultBranch}
               />
             ))}
           </div>

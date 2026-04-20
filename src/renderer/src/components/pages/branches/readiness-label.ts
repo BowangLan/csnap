@@ -23,6 +23,13 @@ const READINESS_MAP: Record<BranchMergeReadiness, ReadinessDisplay> = {
     textClass: 'text-emerald-600 dark:text-emerald-400',
     bgClass: 'bg-emerald-500/8 border-emerald-500/25',
   },
+  'needs-rebase': {
+    label: 'Needs rebase',
+    shortLabel: 'Rebase',
+    dotClass: 'bg-violet-500',
+    textClass: 'text-violet-600 dark:text-violet-400',
+    bgClass: 'bg-violet-500/10 border-violet-500/30',
+  },
   'review-pending': {
     label: 'Review pending',
     shortLabel: 'Review',

@@ -11,6 +11,7 @@ import type { BranchMergeReadiness } from './types'
 const FILTER_OPTIONS: { key: BranchMergeReadiness | 'all'; label: string }[] = [
   { key: 'all', label: 'All' },
   { key: 'ready', label: 'Ready' },
+  { key: 'needs-rebase', label: 'Needs rebase' },
   { key: 'conflicts', label: 'Conflicts' },
   { key: 'ci-failing', label: 'CI failing' },
   { key: 'changes-requested', label: 'Changes requested' },
@@ -43,7 +44,7 @@ export function BranchesPage(): JSX.Element {
 
   const globalCounts = useMemo(() => {
     const c: Record<BranchMergeReadiness, number> = {
-      ready: 0, approved: 0, 'changes-requested': 0, 'review-pending': 0,
+      ready: 0, approved: 0, 'needs-rebase': 0, 'changes-requested': 0, 'review-pending': 0,
       'ci-failing': 0, 'ci-pending': 0, conflicts: 0, draft: 0, unknown: 0,
     }
     for (const tree of trees) {
@@ -75,6 +76,7 @@ export function BranchesPage(): JSX.Element {
           {(
             [
               ['ready', globalCounts.ready + globalCounts.approved],
+              ['needs-rebase', globalCounts['needs-rebase']],
               ['conflicts', globalCounts.conflicts],
               ['ci-failing', globalCounts['ci-failing']],
               ['ci-pending', globalCounts['ci-pending']],

@@ -4,6 +4,7 @@ import type { GithubPullRequest, LocalRepoGitStatus } from '../../../../../share
 export type BranchMergeReadiness =
   | 'ready'
   | 'approved'
+  | 'needs-rebase'
   | 'changes-requested'
   | 'review-pending'
   | 'ci-failing'

@@ -2,7 +2,10 @@ import { deriveCiStatus } from '@renderer/lib/pr-ci'
 import type { GithubPullRequest, GithubSnapshot, LocalRepoGitStatus } from '../../../../../shared/github'
 import type { BranchMergeReadiness, BranchNode, RepoTreeModel } from './types'
 
-function deriveReadiness(pr: GithubPullRequest): BranchMergeReadiness {
+function deriveReadiness(
+  pr: GithubPullRequest,
+  localBehindCount: number | null,
+): BranchMergeReadiness {
   if (pr.isDraft) return 'draft'
 
   if (pr.mergeable === 'CONFLICTING') return 'conflicts'
@@ -14,10 +17,16 @@ function deriveReadiness(pr: GithubPullRequest): BranchMergeReadiness {
 
   if (ci === 'pending') return 'ci-pending'
 
+  const isBehind = localBehindCount !== null && localBehindCount > 0
+  const notMergeable = pr.mergeable !== null && pr.mergeable !== 'MERGEABLE' && pr.mergeable !== 'UNKNOWN'
+
   if (pr.reviewDecision === 'APPROVED') {
-    if (pr.mergeable === 'MERGEABLE') return 'ready'
+    if (pr.mergeable === 'MERGEABLE' && !isBehind) return 'ready'
+    if (notMergeable || isBehind) return 'needs-rebase'
     return 'approved'
   }
+
+  if (notMergeable || isBehind) return 'needs-rebase'
 
   if (pr.reviewDecision === 'REVIEW_REQUIRED' || pr.reviewDecision === null) {
     return 'review-pending'
@@ -29,8 +38,10 @@ function deriveReadiness(pr: GithubPullRequest): BranchMergeReadiness {
 function buildTree(
   pullRequests: GithubPullRequest[],
   defaultBranch: string,
-  currentBranch: string | null,
+  localStatus: LocalRepoGitStatus | null,
 ): BranchNode {
+  const currentBranch = localStatus?.branch ?? null
+
   const prByHead = new Map<string, GithubPullRequest>()
   for (const pr of pullRequests) {
     prByHead.set(pr.headRefName, pr)
@@ -43,17 +54,20 @@ function buildTree(
     branchChildren.get(base)!.add(pr.headRefName)
   }
 
+  const READINESS_ORDER: BranchMergeReadiness[] = [
+    'ready', 'approved', 'needs-rebase', 'ci-pending', 'review-pending',
+    'changes-requested', 'ci-failing', 'conflicts', 'draft', 'unknown',
+  ]
+
   function buildNode(branchName: string, baseName: string, depth: number): BranchNode {
     const pr = prByHead.get(branchName) ?? null
+    const behindCount = branchName === currentBranch ? (localStatus?.behindCount ?? null) : null
+
     const children = Array.from(branchChildren.get(branchName) ?? [])
       .map((child) => buildNode(child, branchName, depth + 1))
       .sort((a, b) => {
-        const readinessOrder: BranchMergeReadiness[] = [
-          'ready', 'approved', 'ci-pending', 'review-pending',
-          'changes-requested', 'ci-failing', 'conflicts', 'draft', 'unknown',
-        ]
-        const ra = readinessOrder.indexOf(a.readiness)
-        const rb = readinessOrder.indexOf(b.readiness)
+        const ra = READINESS_ORDER.indexOf(a.readiness)
+        const rb = READINESS_ORDER.indexOf(b.readiness)
         if (ra !== rb) return ra - rb
         return a.branchName.localeCompare(b.branchName)
       })
@@ -64,7 +78,7 @@ function buildTree(
       baseBranchName: baseName,
       pr,
       ciStatus: pr ? deriveCiStatus(pr.ciStatuses) : null,
-      readiness: pr ? deriveReadiness(pr) : 'unknown',
+      readiness: pr ? deriveReadiness(pr, behindCount) : 'unknown',
       isCurrentBranch: branchName === currentBranch,
       children,
       depth,
@@ -113,10 +127,10 @@ export function computeBranchTrees(
     const localStatus = repoStatuses[nameWithOwner] ?? null
     const localPath = settings.localRepoPaths[nameWithOwner] ?? null
 
-    const rootNode = buildTree(repoPrs, defaultBranch, localStatus?.branch ?? null)
+    const rootNode = buildTree(repoPrs, defaultBranch, localStatus)
 
     const readyCounts: Record<BranchMergeReadiness, number> = {
-      ready: 0, approved: 0, 'changes-requested': 0, 'review-pending': 0,
+      ready: 0, approved: 0, 'needs-rebase': 0, 'changes-requested': 0, 'review-pending': 0,
       'ci-failing': 0, 'ci-pending': 0, conflicts: 0, draft: 0, unknown: 0,
     }
     countReadiness(rootNode, readyCounts)
