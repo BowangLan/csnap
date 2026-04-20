@@ -80,6 +80,7 @@ export const prBugsTable = sqliteTable('pr_bugs', {
   aiPrompt: text('ai_prompt'),
   affectedLocationsJson: text('affected_locations_json').notNull(),
   referenceId: text('reference_id'),
+  diffPath: text('diff_path'),
   detectedAt: integer('detected_at').notNull(),
 })
 

@@ -47,6 +47,7 @@ export interface BugRow {
   aiPrompt: string | null
   affectedLocationsJson: string
   referenceId: string | null
+  diffPath: string | null
   detectedAt: number
 }
 
@@ -132,6 +133,7 @@ export function bugRowToPrBug(row: BugRow): PrBug {
     aiPrompt: row.aiPrompt,
     affectedLocations: JSON.parse(row.affectedLocationsJson) as string[],
     referenceId: row.referenceId,
+    diffPath: row.diffPath ?? null,
     detectedAt: row.detectedAt,
   }
 }
@@ -163,6 +165,7 @@ export function detectBugRows(
         aiPrompt: bug.aiPrompt,
         affectedLocationsJson: JSON.stringify(bug.affectedLocations),
         referenceId: bug.referenceId,
+        diffPath: bug.diffPath,
         detectedAt: bug.detectedAt,
       }
     })

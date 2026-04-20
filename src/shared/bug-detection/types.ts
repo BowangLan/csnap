@@ -12,6 +12,8 @@ export interface DetectedBug {
   aiPrompt: string | null
   affectedLocations: string[]
   referenceId: string | null
+  /** File path when the source comment is an inline diff review comment. */
+  diffPath: string | null
   /** Same as the source comment's `createdAt` (GitHub posting time). */
   detectedAt: number
 }

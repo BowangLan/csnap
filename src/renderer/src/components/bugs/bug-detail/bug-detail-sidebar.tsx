@@ -2,6 +2,7 @@ import { formatDistanceToNow } from 'date-fns'
 import { Link } from '@tanstack/react-router'
 import {
   ExternalLink,
+  FileCode2,
   GitPullRequest,
   Clock,
   CheckCircle2,
@@ -100,6 +101,17 @@ export function BugDetailSidebar({
             <div className="flex justify-between">
               <dt className="text-muted-foreground">Reference</dt>
               <dd className="font-mono text-xs text-foreground/90">{bug.referenceId}</dd>
+            </div>
+          )}
+          {bug.diffPath && (
+            <div className="flex flex-col gap-1">
+              <dt className="text-muted-foreground">File</dt>
+              <dd className="flex min-w-0 items-center gap-1">
+                <FileCode2 className="size-3 shrink-0 opacity-60" aria-hidden />
+                <code className="truncate font-mono text-[10px] text-foreground/90" title={bug.diffPath}>
+                  {bug.diffPath}
+                </code>
+              </dd>
             </div>
           )}
           <div className="flex justify-between">

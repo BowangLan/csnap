@@ -1,6 +1,6 @@
 import { formatDistanceToNow } from 'date-fns'
 import { Link } from '@tanstack/react-router'
-import { ExternalLink, GitPullRequest, MoreHorizontal, Copy } from 'lucide-react'
+import { ExternalLink, FileCode2, GitPullRequest, MoreHorizontal, Copy } from 'lucide-react'
 import { toast } from 'sonner'
 import { Icons } from '@renderer/components/icons'
 import { Button } from '@renderer/components/ui/button'
@@ -96,6 +96,15 @@ export function BugDetailHeader({
           )}
         </div>
       </div>
+
+      {bug.diffPath ? (
+        <div className="mt-1 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+          <FileCode2 className="size-3.5 shrink-0 opacity-60" aria-hidden />
+          <code className="truncate font-mono text-[11px]" title={bug.diffPath}>
+            {bug.diffPath}
+          </code>
+        </div>
+      ) : null}
 
       <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
         <span className="inline-flex items-center gap-1.5">

@@ -122,6 +122,7 @@ const inlineReviewHandler: BugHandler = {
       aiPrompt: parseAiPrompt(body),
       affectedLocations: parseAffectedLocations(body),
       referenceId: parseFingerprint(body),
+      diffPath: comment.diffPath ?? null,
       detectedAt: comment.createdAt,
     }
   },

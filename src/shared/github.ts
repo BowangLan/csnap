@@ -106,6 +106,8 @@ export interface PrBug {
   aiPrompt: string | null
   affectedLocations: string[]
   referenceId: string | null
+  /** File path when the source comment is an inline diff review comment. */
+  diffPath: string | null
   /** Unix ms — matches the source GitHub comment's `createdAt`. */
   detectedAt: number
 }

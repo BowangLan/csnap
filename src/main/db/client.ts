@@ -85,6 +85,7 @@ CREATE TABLE IF NOT EXISTS pr_bugs (
   ai_prompt TEXT,
   affected_locations_json TEXT NOT NULL,
   reference_id TEXT,
+  diff_path TEXT,
   detected_at INTEGER NOT NULL
 );
 
@@ -101,6 +102,22 @@ CREATE TABLE IF NOT EXISTS local_command_logs (
 );
 `
 
+/**
+ * Additive column migrations for existing tables.
+ * Each entry is idempotent — the column is only added when absent.
+ */
+const COLUMN_MIGRATIONS: { table: string; column: string; type: string }[] = [
+  { table: 'pr_bugs', column: 'diff_path', type: 'TEXT' },
+]
+
+function applyColumnMigrations(sqlite: Database.Database): void {
+  for (const { table, column, type } of COLUMN_MIGRATIONS) {
+    const cols = sqlite.pragma(`table_info(${table})`) as { name: string }[]
+    if (cols.some((c) => c.name === column)) continue
+    sqlite.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`)
+  }
+}
+
 export class AppDatabase {
   private sqlite: Database.Database | null = null
   private dbInstance: BetterSQLite3Database<AppSchema> | null = null
@@ -113,6 +130,7 @@ export class AppDatabase {
     sqlite.pragma('journal_mode = WAL')
     sqlite.pragma('foreign_keys = ON')
     sqlite.exec(MIGRATIONS_SQL)
+    applyColumnMigrations(sqlite)
 
     this.sqlite = sqlite
     this.dbInstance = drizzle(sqlite, { schema })

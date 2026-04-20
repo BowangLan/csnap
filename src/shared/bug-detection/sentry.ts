@@ -105,6 +105,7 @@ const bugPredictionHandler: BugHandler = {
       aiPrompt: parseAiPrompt(body),
       affectedLocations: parseAffectedLocations(body),
       referenceId: parseReferenceId(body),
+      diffPath: comment.diffPath ?? null,
       detectedAt: comment.createdAt,
     }
   },

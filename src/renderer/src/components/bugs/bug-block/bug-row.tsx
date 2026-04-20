@@ -1,5 +1,5 @@
 import { formatDistanceToNow } from 'date-fns'
-import { Copy, MoreHorizontal } from 'lucide-react'
+import { Copy, FileCode2, MoreHorizontal } from 'lucide-react'
 import { toast } from 'sonner'
 import { Link } from '@tanstack/react-router'
 import { OpenInBrowserButton } from '@renderer/components/pr/pr-block/open-in-browser-button'
@@ -99,17 +99,14 @@ export function BugRow({
         >
           {bug.title}
         </p>
-        {/* {locationsPreview ? (
+        {bug.diffPath ? (
           <p className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
-            <MapPin className="size-3 shrink-0" aria-hidden />
-            <code
-              className="truncate font-mono text-[10px]"
-              title={bug.affectedLocations.join('\n')}
-            >
-              {locationsPreview.length > 56 ? `…${locationsPreview.slice(-54)}` : locationsPreview}
+            <FileCode2 className="size-3 shrink-0 opacity-60" aria-hidden />
+            <code className="truncate font-mono text-[10px]" title={bug.diffPath}>
+              {bug.diffPath}
             </code>
           </p>
-        ) : null} */}
+        ) : null}
       </div>
 
       <p className="relative z-10 hidden min-w-0 max-w-[min(100%,20rem)] truncate text-xs text-muted-foreground md:block select-none pointer-events-none">
