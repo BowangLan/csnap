@@ -60,7 +60,6 @@ const GITHUB_CHANNELS = {
 const SETTINGS_FILE_NAME = 'github-settings.json'
 const REFRESH_INTERVAL_MIN_SECONDS = 15
 const REFRESH_INTERVAL_MAX_SECONDS = 3600
-const POLL_INTERVAL_SECONDS = 30
 const PR_SEARCH_LIMIT = 100
 /** GitHub caps `first`/`last` on IssueCommentConnection; paginate beyond this. */
 const ISSUE_COMMENTS_PAGE_SIZE = 100
@@ -632,12 +631,15 @@ class RateLimitError extends Error {
   }
 }
 
+const POLL_RETRY_LIMIT = 2
+
 export class GithubSyncService {
   private pollTimer: NodeJS.Timeout | null = null
   private settingsPath = ''
   private isRefreshing = false
   private lastPollFingerprints: PrPollFingerprint[] = []
   private rateLimitResetAt: Date | null = null
+  private consecutivePollFailures = 0
 
   constructor(private readonly githubStore: GithubStoreService) {}
 
@@ -649,6 +651,13 @@ export class GithubSyncService {
     if (!this.githubStore.hasStoredSettings()) {
       const settings = await this.loadSettingsFromJsonFile()
       this.githubStore.commitSettings(settings)
+    }
+
+    // Seed poll fingerprints from persisted data so the first poll doesn't
+    // compare against [] and trigger a redundant full refresh.
+    const persisted = this.githubStore.getSnapshot()
+    if (persisted.pullRequests.length > 0) {
+      this.lastPollFingerprints = this.buildFingerprints(persisted.pullRequests)
     }
 
     this.registerIpcHandlers()
@@ -718,16 +727,6 @@ export class GithubSyncService {
     this.githubStore.commitSyncStarted()
 
     try {
-      const auth = await this.fetchAuth()
-
-      if (!auth.isAuthenticated) {
-        this.githubStore.commitSyncFailed({
-          error: 'GitHub CLI is not authenticated. Run `gh auth login` first.',
-          auth,
-        })
-        return this.githubStore.getSnapshot()
-      }
-
       // Capture previous PRs BEFORE committing new data so we can diff them
       // for notification/sound logic.
       const previousPullRequests = this.githubStore.getSnapshot().pullRequests
@@ -736,6 +735,12 @@ export class GithubSyncService {
       const nextData = await this.fetchGithubData()
       this.logRateLimit('full-fetch', nextData.rateLimit)
       this.handleRateLimitFromResponse(nextData.rateLimit)
+
+      const auth: GithubAuthStatus = {
+        isAuthenticated: true,
+        activeLogin: nextData.viewerLogin,
+      }
+
       const changes = this.getPrChanges(previousPullRequests, nextData.pullRequests)
       const hasAnyChange =
         changes.hasNewCommit ||
@@ -766,13 +771,20 @@ export class GithubSyncService {
           auth: { isAuthenticated: true, activeLogin: this.githubStore.getSnapshot().auth.activeLogin },
         })
       } else {
+        const msg = error instanceof Error ? error.message : String(error)
+        const isAuthError = /not logged in|authentication|auth token|login/i.test(msg)
         this.githubStore.commitSyncFailed({
-          error: error instanceof Error ? error.message : 'Failed to refresh GitHub data.',
-          auth: { isAuthenticated: true, activeLogin: this.githubStore.getSnapshot().auth.activeLogin },
+          error: isAuthError
+            ? 'GitHub CLI is not authenticated. Run `gh auth login` first.'
+            : msg || 'Failed to refresh GitHub data.',
+          auth: isAuthError
+            ? { isAuthenticated: false, activeLogin: null }
+            : { isAuthenticated: true, activeLogin: this.githubStore.getSnapshot().auth.activeLogin },
         })
       }
     } finally {
       this.isRefreshing = false
+      this.resetPollTimer()
     }
 
     return this.githubStore.getSnapshot()
@@ -861,13 +873,19 @@ export class GithubSyncService {
       this.pollTimer = null
     }
 
-    const intervalSeconds = Math.min(
-      this.settings.refreshIntervalSeconds,
-      POLL_INTERVAL_SECONDS,
-    )
+    const intervalSeconds = this.settings.refreshIntervalSeconds
     this.pollTimer = setInterval(() => {
       void this.poll()
     }, intervalSeconds * 1000)
+  }
+
+  /**
+   * Reset the poll timer so the next poll fires a full interval from now.
+   * Called after every refresh() to prevent a poll from firing immediately
+   * after a focus- or action-triggered refresh.
+   */
+  private resetPollTimer(): void {
+    this.schedulePoll()
   }
 
   /**
@@ -887,6 +905,7 @@ export class GithubSyncService {
       const result = await this.fetchPollData()
       this.logRateLimit('poll', result.rateLimit)
       this.handleRateLimitFromResponse(result.rateLimit)
+      this.consecutivePollFailures = 0
       const nextFingerprints = this.buildFingerprintsFromPoll(result.nodes)
 
       if (this.fingerprintsChanged(this.lastPollFingerprints, nextFingerprints)) {
@@ -902,8 +921,14 @@ export class GithubSyncService {
           auth: { isAuthenticated: true, activeLogin: this.githubStore.getSnapshot().auth.activeLogin },
         })
       } else {
-        console.warn('[poll] lightweight poll failed, falling back to full refresh:', error)
-        void this.refresh()
+        this.consecutivePollFailures++
+        if (this.consecutivePollFailures > POLL_RETRY_LIMIT) {
+          console.warn(`[poll] ${this.consecutivePollFailures} consecutive failures, falling back to full refresh:`, error)
+          this.consecutivePollFailures = 0
+          void this.refresh()
+        } else {
+          console.warn(`[poll] transient failure (${this.consecutivePollFailures}/${POLL_RETRY_LIMIT}), will retry next cycle:`, error)
+        }
       }
     }
   }
@@ -1016,21 +1041,6 @@ export class GithubSyncService {
     console.log(`[github:rateLimit:${label}] cost=${rl.cost} remaining=${rl.remaining} resetAt=${rl.resetAt}`)
   }
 
-  private async fetchAuth(): Promise<GithubAuthStatus> {
-    try {
-      const viewer = await this.runGhJson<GhViewerResponse>(['api', 'user'])
-      return {
-        isAuthenticated: true,
-        activeLogin: viewer.login,
-      }
-    } catch (error) {
-      if (error instanceof RateLimitError) throw error
-      return {
-        isAuthenticated: false,
-        activeLogin: null,
-      }
-    }
-  }
 
   /** Fetches remaining pages of issue comments (conversation) when totalCount exceeds one GraphQL page. */
   private async collectAllIssueCommentNodes(
@@ -1173,6 +1183,7 @@ export class GithubSyncService {
     repositories: GithubRepository[]
     pullRequests: GithubPullRequest[]
     rateLimit: GhRateLimit
+    viewerLogin: string
   }> {
     console.log('[fetchGithubData] called')
     const result = await this.runGhJson<GhGraphqlResponse>([
@@ -1263,7 +1274,12 @@ export class GithubSyncService {
       return rightUpdated - leftUpdated
     })
 
-    return { repositories, pullRequests, rateLimit: result.data.rateLimit }
+    return {
+      repositories,
+      pullRequests,
+      rateLimit: result.data.rateLimit,
+      viewerLogin: result.data.viewer.login,
+    }
   }
 
   private getPrChanges(
@@ -1484,20 +1500,9 @@ export class GithubSyncService {
       `content=${content}`,
     ])
 
-    // Await the refresh so callers (e.g. renderer) can rely on the snapshot
-    // being up-to-date when their IPC promise resolves. If a refresh is already
-    // in progress, wait for it and then run one more to pick up our mutation.
-    if (this.isRefreshing) {
-      await this.waitForRefreshIdle()
-    }
-    await this.refresh()
-  }
-
-  private async waitForRefreshIdle(timeoutMs = 15_000): Promise<void> {
-    const deadline = Date.now() + timeoutMs
-    while (this.isRefreshing && Date.now() < deadline) {
-      await new Promise((resolve) => setTimeout(resolve, 50))
-    }
+    // Optimistic update: toggle the reaction in the persisted snapshot
+    // immediately instead of burning ~200 rate-limit points on a full refresh.
+    this.githubStore.commitReactionToggle(subjectId, content, !viewerHasReacted)
   }
 
   private findViewerHasReacted(

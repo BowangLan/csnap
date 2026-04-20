@@ -374,6 +374,38 @@ export class GithubStoreService {
     void this.broadcastSnapshot()
   }
 
+  commitReactionToggle(commentId: string, content: string, added: boolean): void {
+    const rows = this.database.db.select().from(githubPullRequestsTable).all()
+
+    for (const row of rows) {
+      const comments = JSON.parse(row.commentsJson) as GithubPullRequest['comments']
+      let changed = false
+
+      for (const comment of comments) {
+        if (comment.id !== commentId) continue
+        const group = comment.reactionGroups.find((r) => r.content === content)
+        if (group) {
+          group.viewerHasReacted = added
+          group.count = Math.max(0, group.count + (added ? 1 : -1))
+        } else if (added) {
+          comment.reactionGroups.push({ content, count: 1, viewerHasReacted: true })
+        }
+        changed = true
+        break
+      }
+
+      if (changed) {
+        this.database.db
+          .update(githubPullRequestsTable)
+          .set({ commentsJson: JSON.stringify(comments) })
+          .where(eq(githubPullRequestsTable.id, row.id))
+          .run()
+        void this.broadcastSnapshot()
+        return
+      }
+    }
+  }
+
   commitBugStatusSet(payload: { commentId: string; status: BugStatus; manual: boolean }): void {
     if (!BUG_STATUS_ALL.includes(payload.status)) return
 
