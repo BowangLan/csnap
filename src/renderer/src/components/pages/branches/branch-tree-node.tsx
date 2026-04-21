@@ -6,12 +6,10 @@ import {
   ArrowDownToLine,
   ChevronDown,
   ChevronRight,
-  ExternalLink,
-  GitBranch,
   GitMerge,
-  GitPullRequest,
   RefreshCw,
 } from 'lucide-react'
+import { Icons } from '@renderer/components/icons'
 import { Badge } from '@renderer/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/components/ui/tooltip'
 import { cn } from '@renderer/lib/utils'
@@ -71,11 +69,11 @@ function BranchNodeCard({
 
       {/* Branch icon */}
       {pr ? (
-        <GitPullRequest
+        <Icons.PullRequest
           className={cn('size-3.5 shrink-0', isCurrentBranch ? 'text-emerald-500' : 'text-muted-foreground')}
         />
       ) : (
-        <GitBranch
+        <Icons.Branch
           className={cn('size-3.5 shrink-0', isCurrentBranch ? 'text-emerald-500' : 'text-muted-foreground/60')}
         />
       )}
@@ -96,12 +94,6 @@ function BranchNodeCard({
             <Badge variant="secondary" size="sm" className="text-[9px] uppercase tracking-wider font-semibold">
               HEAD
             </Badge>
-          ) : null}
-          {showBase ? (
-            <span className="hidden items-center gap-0.5 text-[10px] text-muted-foreground/50 sm:flex" title={`Based on ${baseBranchName}`}>
-              <ArrowDownToLine className="size-2.5" />
-              <span className="font-mono">{baseBranchName}</span>
-            </span>
           ) : null}
         </div>
 
@@ -178,7 +170,7 @@ function BranchNodeCard({
                   })()
                 }}
               >
-                <GitBranch className="size-3" />
+                <Icons.Branch className="size-3" />
               </button>
               <a
                 href={pr.url}
@@ -190,7 +182,7 @@ function BranchNodeCard({
                   window.api.shell.openExternal(pr.url)
                 }}
               >
-                <ExternalLink className="size-3" />
+                <Icons.ExternalLink className="size-3" />
               </a>
             </div>
           </>
@@ -223,7 +215,7 @@ export function BranchTreeNode({
       <div className="space-y-0">
         {/* Root branch (main/master) */}
         <div className="flex items-center gap-2 px-1 py-1">
-          <GitBranch className="size-4 shrink-0 text-muted-foreground/70" />
+          <Icons.Branch className="size-4 shrink-0 text-muted-foreground/70" />
           <span className="font-mono text-xs font-medium text-muted-foreground">
             {node.branchName}
           </span>
@@ -265,14 +257,14 @@ export function BranchTreeNode({
         {/* Vertical line from parent */}
         <div
           className={cn(
-            'absolute left-1/2 top-0 w-px -translate-x-1/2 bg-border/70',
+            'absolute left-0 top-0 w-px -translate-x-1/2 bg-border/70',
             isLast ? 'h-8' : 'h-full',
           )}
         />
         {/* Horizontal line to node */}
-        <div className="absolute left-1/2 top-[30px] h-px w-3 bg-border/70" />
+        <div className="absolute left-0 top-[30px] h-px w-7 bg-border/70" />
         {/* Dot at junction */}
-        <div className="absolute left-1/2 top-[28px] size-1.5 -translate-x-1/2 rounded-full bg-border" />
+        <div className="absolute left-0 top-[28px] size-1.5 -translate-x-1/2 rounded-full bg-border" />
       </div>
 
       {/* Node content */}
