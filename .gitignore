@@ -9,3 +9,5 @@ out
 .claude/
 
 tmp/
+data/
+__pycache__/
